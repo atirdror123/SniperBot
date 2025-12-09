@@ -48,16 +48,13 @@ def check_password():
 
     def password_entered():
         """Checks whether a password entered by the user is correct."""
-        try:
-            if st.session_state["password"] == st.secrets["DASHBOARD_PASSWORD"]:
-                st.session_state["password_correct"] = True
-                del st.session_state["password"]  # don't store password
-            else:
-                st.session_state["password_correct"] = False
-        except KeyError:
-            # Fallback/Error handling if secret is missing
-            st.error("⚠️ System Error: Password not configured in Secrets.")
-            st.info("Please go to Streamlit Cloud -> Settings -> Secrets and add: DASHBOARD_PASSWORD = '...'" )
+        # 1. Try Secret, 2. Fallback to Hardcoded
+        correct_password = st.secrets.get("DASHBOARD_PASSWORD", "Atirdror2")
+        
+        if st.session_state["password"] == correct_password:
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]  # don't store password
+        else:
             st.session_state["password_correct"] = False
 
     if "password_correct" not in st.session_state:
