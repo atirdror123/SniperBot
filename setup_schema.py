@@ -7,6 +7,7 @@ load_dotenv()
 
 def get_schema_sql():
     return """
+    -- (EXISTING TABLES PRESERVED)
     -- Create model_weights table
     CREATE TABLE IF NOT EXISTS model_weights (
         id SERIAL PRIMARY KEY,
@@ -29,6 +30,7 @@ def get_schema_sql():
         confidence_score FLOAT NOT NULL,
         reasons TEXT,
         status TEXT CHECK (status IN ('OPEN', 'CLOSED')) NOT NULL,
+        raw_features JSONB,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );
 
@@ -39,6 +41,68 @@ def get_schema_sql():
         avg_price FLOAT NOT NULL,
         current_value FLOAT NOT NULL,
         last_updated TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+
+    -- Create ai_multipliers table
+    CREATE TABLE IF NOT EXISTS ai_multipliers (
+        feature_name TEXT PRIMARY KEY,
+        multiplier FLOAT DEFAULT 1.0,
+        last_updated TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+
+    -- Insert default multipliers if table is empty
+    INSERT INTO ai_multipliers (feature_name, multiplier)
+    VALUES 
+        ('trend', 1.0),
+        ('volume', 1.0),
+        ('cash_rich', 1.0),
+        ('sector_strength', 1.0),
+        ('earnings_growth', 1.0)
+    ON CONFLICT (feature_name) DO NOTHING;
+
+    -- === NEW SENTIENT SNIPER TABLES ===
+
+    -- 1. Lens Weights (The Brain's Configuration)
+    CREATE TABLE IF NOT EXISTS lens_weights (
+        id SERIAL PRIMARY KEY,
+        regime TEXT NOT NULL, -- 'BULL', 'BEAR', 'CHOP'
+        w_quant FLOAT NOT NULL DEFAULT 1.0,
+        w_oracle FLOAT NOT NULL DEFAULT 1.0,
+        w_hunter FLOAT NOT NULL DEFAULT 1.0,
+        w_chartist FLOAT NOT NULL DEFAULT 1.0,
+        last_updated TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        UNIQUE(regime)
+    );
+
+    -- Insert Defaults for Bull/Bear
+    INSERT INTO lens_weights (regime, w_quant, w_oracle, w_hunter, w_chartist)
+    VALUES 
+        ('BULL', 1.0, 1.0, 1.2, 1.0), -- Hunter favored in Bull
+        ('BEAR', 1.2, 1.0, 0.8, 1.0), -- Quant favored in Bear
+        ('CHOP', 0.8, 0.8, 0.8, 1.5)  -- Chartist favored in Chop
+    ON CONFLICT (regime) DO NOTHING;
+
+    -- 2. Sentient Memory (Outcome Log)
+    CREATE TABLE IF NOT EXISTS sentient_memory (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        ticker TEXT NOT NULL,
+        entry_date TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        
+        -- Scores at Entry
+        score_quant FLOAT,
+        score_oracle FLOAT,
+        score_hunter FLOAT,
+        score_chartist FLOAT,
+        final_score FLOAT,
+        
+        -- Outcome Data (Updated later)
+        roi_20d FLOAT,
+        roi_90d FLOAT,
+        outcome_label TEXT, -- 'WIN', 'LOSS', 'STAGNANT'
+        
+        -- Metadata
+        regime_at_entry TEXT,
+        features_snapshot JSONB
     );
     """
 

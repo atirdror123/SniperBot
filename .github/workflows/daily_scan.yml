@@ -28,5 +28,5 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         
-    - name: Run Scanner
-      run: python run_scanner.py
+    - name: Run Sentient Sniper
+      run: python main_sentient.py

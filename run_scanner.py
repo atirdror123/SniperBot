@@ -1,5 +1,6 @@
 import os
 import time
+from datetime import datetime, timezone, timedelta
 import pandas as pd
 import requests
 import yfinance as yf
@@ -71,21 +72,20 @@ def get_all_tickers():
         print(f"Error fetching S&P 500: {e}")
         return []
 
-def save_signal(supabase: Client, ticker: str, entry_price: float, score: int, reasons: str):
-    """Saves a signal to Supabase"""
+
+
+def cleanup_todays_signals(supabase: Client):
+    """
+    Removes ALL 'OPEN' signals to ensure the dashboard only shows the latest batch.
+    This guarantees strictly 10 active stocks at any time.
+    """
     try:
-        data = {
-            'ticker': ticker,
-            'entry_price': entry_price,
-            'confidence_score': score,
-            'reasons': reasons,
-            'status': 'OPEN' # Using 'OPEN' to match database constraint (user asked for 'new' but schema enforces OPEN/CLOSED)
-        }
-        supabase.table('sniper_signals').insert(data).execute()
-        return True
+        # Delete all signals with status='OPEN'
+        # This is safer than date filtering because it clears the "Active Targets" view completely
+        supabase.table('sniper_signals').delete().eq('status', 'OPEN').execute()
+        print(f"  Cleaned up ALL existing OPEN signals to enforce strict limit.")
     except Exception as e:
-        print(f"  Error saving {ticker} to DB: {e}")
-        return False
+        print(f"  Warning: Failed to cleanup signals: {e}")
 
 def run_scanner():
     # Initialize Supabase
@@ -110,7 +110,7 @@ def run_scanner():
     
     # 2. Batching
     total_survivors = 0
-    total_saved = 0
+    all_qualified_stocks = []  # Store all stocks that pass threshold
     
     for i in range(0, total_tickers, BATCH_SIZE):
         batch = tickers[i:i + BATCH_SIZE]
@@ -164,46 +164,103 @@ def run_scanner():
         print(f"  Survivors: {len(survivors)}")
         total_survivors += len(survivors)
         
-        # 4. Deep Sniper Analysis
-        batch_saved = 0
+        # 4. Deep Sniper Analysis - collect all qualified stocks
         for ticker, fast_close in survivors:
             try:
                 result = scorer.analyze_stock(ticker)
                 score = result.get('final_score', 0)
                 
                 if score > SCORE_THRESHOLD:
-                    # Use the entry price from deep analysis (more recent/accurate) or fallback to fast filter close
-                    # The scorer doesn't return entry_price explicitly in the dict, but we can get it from yfinance history inside scorer
-                    # Actually, scorer returns 'details' and 'final_score'.
-                    # We need to fetch price again or use the one we have.
-                    # To be precise, let's use the one from the fast filter as 'entry_price' for now, 
-                    # or better, fetch it quickly if needed. 
-                    # But wait, the user instructions say: "Read entry_price from the returned data."
-                    # The `SniperScorer.analyze_stock` returns `{'ticker': ..., 'final_score': ..., 'details': ...}`.
-                    # It does NOT return `entry_price`.
-                    # I should probably update `SniperScorer`? No, "DO NOT modify scanner_logic.py".
-                    # So I must get entry_price separately.
-                    # I will use the `fast_close` from the batch download.
-                    
-                    if save_signal(supabase, ticker, fast_close, score, result['details']):
-                        batch_saved += 1
-                        print(f"    >>> SAVED: {ticker} (Score: {score})")
+                    # Store qualified stock with all details
+                    all_qualified_stocks.append({
+                        'ticker': ticker,
+                        'entry_price': fast_close,
+                        'score': score,
+                        'details': result['details'],
+                        'raw_features': result.get('raw_features', {}) # Capture raw features
+                    })
+                    print(f"    >>> QUALIFIED: {ticker} (Score: {score})")
                         
             except Exception as e:
                 print(f"    Error analyzing {ticker}: {e}")
                 continue
         
-        total_saved += batch_saved
-        print(f"  Batch Summary: {len(batch)} scanned -> {len(survivors)} survivors -> {batch_saved} saved")
+        print(f"  Batch Summary: {len(batch)} scanned -> {len(survivors)} survivors -> {len(all_qualified_stocks)} total qualified so far")
         
         # Sleep to be nice to API
         time.sleep(1)
+
+    # 5. Select Top 10 Stocks by Score
+    print("\n" + "="*60)
+    print("FILTERING TOP 10 STOCKS")
+    print("="*60)
+    
+    if not all_qualified_stocks:
+        print("No stocks qualified (score > 75). Nothing to save.")
+    else:
+        # Sort by score descending and take top 10
+        all_qualified_stocks.sort(key=lambda x: x['score'], reverse=True)
+        top_10 = all_qualified_stocks[:10]
+        
+        print(f"Total Qualified: {len(all_qualified_stocks)}")
+        
+        # CLEANUP: Remove today's existing signals before saving new ones
+        print("Cleaning up previous signals for today...")
+        cleanup_todays_signals(supabase)
+        
+        # VERIFY CLEANUP (SAFEGUARD)
+        try:
+            # Check if any OPEN signals remain
+            existing = supabase.table('sniper_signals').select('ticker', count='exact').eq('status', 'OPEN').execute()
+            count = existing.count if existing.count is not None else len(existing.data)
+            
+            if count > 0:
+                print(f"CRITICAL ERROR: Cleanup failed. Found {count} 'OPEN' signals still in DB.")
+                print("Aborting save to prevent exceeding the 10-stock limit.")
+                return
+            else:
+                print("  Cleanup verified. 0 OPEN signals remaining.")
+        except Exception as e:
+            print(f"Error verifying cleanup: {e}. Aborting for safety.")
+            return
+        
+        print(f"Saving Top 10 Highest Scoring Stocks:")
+        print("-" * 60)
+        
+        # Prepare batch data
+        signals_data = []
+        for stock in top_10:
+            signals_data.append({
+                'ticker': stock['ticker'],
+                'entry_price': stock['entry_price'],
+                'confidence_score': stock['score'],
+                'reasons': stock['details'],
+                'status': 'OPEN',
+                'raw_features': stock['raw_features']
+            })
+            print(f"  Preparing: {stock['ticker']} - Score: {stock['score']}")
+
+        # Batch Insert
+        if signals_data:
+            try:
+                supabase.table('sniper_signals').insert(signals_data).execute()
+                total_saved = len(signals_data)
+                print(f"\nSuccessfully batch inserted {total_saved} stocks.")
+            except Exception as e:
+                print(f"\nCRITICAL ERROR: Batch insert failed: {e}")
+                total_saved = 0
+        else:
+            total_saved = 0
+        
+        if len(all_qualified_stocks) > 10:
+            print(f"\nNote: {len(all_qualified_stocks) - 10} additional qualified stocks were not saved (only top 10 saved)")
 
     print("\n" + "="*60)
     print("SCAN COMPLETE")
     print(f"Total Scanned: {total_tickers}")
     print(f"Total Survivors: {total_survivors}")
-    print(f"Total Saved: {total_saved}")
+    print(f"Total Qualified: {len(all_qualified_stocks)}")
+    print(f"Total Saved: {total_saved if all_qualified_stocks else 0}")
     print("="*60)
 
 if __name__ == "__main__":

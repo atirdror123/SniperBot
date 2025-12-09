@@ -1,0 +1,11 @@
+--- STARTING AI TEST ---
+Loaded Dynamic Weights: {'w_trend': 0.3, 'w_volatility': 0.2, 'w_fundamental': 0.2, 'w_sentiment': 0.3}
+Analying Sector Trends (ETF vs SMA50)...
+Sector Trends Updated: 11 ETFs analyzed.
+Scorer initialized.
+Running analyze_stock('TEST_AI')...
+Ticker: TEST_AI
+Final Score: 95
+DETAILS: 🤖 AI INSIGHT: This stock is fundamentally strong and trading with perfect technical momentum. Huge news of 500% revenue growth is attracting massive investor interest. With analysts confirming high upside, everything points toward a powerful breakout.; MA Stack (20>50>200): +Trend; Near 52w High: +Trend; Sector XLK is Strong (+Trend); RVOL 5.0 > 1.5: +Vol; ATR < 5%: +Vol; Analyst Upside > 20%: +Fund; Analyst Buy Rating: +Fund
+
+✅ TEST PASSED: AI Conviction Layer Triggered.
