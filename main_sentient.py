@@ -77,8 +77,13 @@ class SentientSniperBot:
         
         # A. FMP Screener (FMP 1 call)
         print("[SCANNER] Fetching Universe from FMP Screener...")
-        universe = self.ingestor.fetch_universe()
-        print(f"[SCANNER] Universe Size: {len(universe)} stocks.")
+        
+        # Check if Testing
+        is_test = getattr(self, "test_mode", False)
+        limit = 50 if is_test else 10000
+        
+        universe = self.ingestor.fetch_universe(limit=limit)
+        print(f"[SCANNER] Universe Size: {len(universe)} stocks (Test Mode: {is_test}).")
         
         # B. Batch Processing
         BATCH_SIZE = 100
@@ -228,9 +233,12 @@ class SentientSniperBot:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--reset", action="store_true", help="Wipe all memory before running")
+    parser.add_argument("--test", action="store_true", help="Run a small test batch (50 stocks)")
     args = parser.parse_args()
     
     bot = SentientSniperBot()
+    bot.test_mode = args.test
+    
     if args.reset:
         bot.reset_system()
     

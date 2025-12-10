@@ -19,7 +19,7 @@ class DataIngestor:
         if not self.api_key:
             print("[DATA] WARNING: FMP_API_KEY not found. Using Mocks.")
 
-    def fetch_universe(self) -> list:
+    def fetch_universe(self, limit: int = 10000) -> list:
         """
         Fetches a filtered list of tickers from FMP Screener.
         Criteria:
@@ -40,7 +40,7 @@ class DataIngestor:
             "volumeMoreThan": 50_000,
             "exchange": "NASDAQ,NYSE,AMEX",
             "isEtf": "false",
-            "limit": 10000 # Max limit to get all
+            "limit": limit # Max limit to get all
         }
         
         data = self._get_json(endpoint, params=params)
