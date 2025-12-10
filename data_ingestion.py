@@ -19,6 +19,38 @@ class DataIngestor:
         if not self.api_key:
             print("[DATA] WARNING: FMP_API_KEY not found. Using Mocks.")
 
+    def fetch_universe(self) -> list:
+        """
+        Fetches a filtered list of tickers from FMP Screener.
+        Criteria:
+        - Market Cap > 100M (Avoid penny stocks)
+        - Price > $2.00
+        - Volume > 50,000
+        - Exchange: NASDAQ, NYSE, AMEX
+        """
+        if not self.api_key:
+            # Fallback for testing/offline
+            return ["AAPL", "NVDA", "AMD", "TSLA", "MSFT", "AMZN", "GOOGL", "META"] # Small list
+
+        endpoint = "stock-screener"
+        # FMP Screener allows params
+        params = {
+            "marketCapMoreThan": 100_000_000,
+            "priceMoreThan": 2,
+            "volumeMoreThan": 50_000,
+            "exchange": "NASDAQ,NYSE,AMEX",
+            "isEtf": "false",
+            "limit": 10000 # Max limit to get all
+        }
+        
+        data = self._get_json(endpoint, params=params)
+        if data:
+             # Extract symbols
+             tickers = [x['symbol'] for x in data if 'symbol' in x]
+             # Filter out dots/dashes just in case
+             return [t for t in tickers if "." not in t and "-" not in t]
+        return []
+
     def _get_json(self, endpoint: str, params: Dict = None):
         if not self.api_key: return None
         if params is None: params = {}

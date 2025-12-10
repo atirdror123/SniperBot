@@ -72,36 +72,111 @@ class SentientSniperBot:
 
         # 3. SCAN & SCORE (Layer 2)
         candidates = []
-        print(f"[SCANNER] Scanning {len(self.tickers_to_scan)} tickers...")
+        # 3. SCAN & SCORE (Layer 2)
+        candidates = []
         
-        for ticker in self.tickers_to_scan:
-            # Setup Analysis
-            setup = self.signal_engine.analyze_ticker(ticker, regime)
+        # A. FMP Screener (FMP 1 call)
+        print("[SCANNER] Fetching Universe from FMP Screener...")
+        universe = self.ingestor.fetch_universe()
+        print(f"[SCANNER] Universe Size: {len(universe)} stocks.")
+        
+        # B. Batch Processing
+        BATCH_SIZE = 100
+        # Simple Rate Limiting: 300 calls/min = 5 calls/sec. 
+        # Deep Scan uses ~3 calls per stock. So ~1.5 stocks/sec.
+        # We will process carefully.
+        
+        import yfinance as yf
+        import time
+        import pandas as pd
+        
+        total_processed = 0
+        deep_scan_count = 0
+        
+        for i in range(0, len(universe), BATCH_SIZE):
+            batch = universe[i:i+BATCH_SIZE]
+            print(f"\n[BATCH] Processing {i} to {i+len(batch)}...")
             
-            if not setup.is_valid:
-                # print(f"  [REJECT] {ticker}: {setup.rejection_reason}")
-                continue
+            # C. Fast Technical Filter (YF Batch - Free/Cheap)
+            survivors = []
+            try:
+                # Download batch data efficiently
+                data = yf.download(batch, period="1y", interval="1d", group_by='ticker', progress=False, threads=True)
                 
-            # Apply AI Weights
-            weighted_sum = 0
-            total_weight = 0
+                for ticker in batch:
+                    try:
+                        # Handle MultiIndex vs Single
+                        if len(batch) > 1:
+                            if ticker not in data.columns.levels[0]: continue
+                            df = data[ticker]
+                        else:
+                            df = data
+                            
+                        if df.empty or len(df) < 150: continue
+                        
+                        # Trend Check: Price > SMA150
+                        # Calculate minimal technicals here to save FMP calls
+                        close = df['Close'].iloc[-1]
+                        sma150 = df['Close'].rolling(window=150).mean().iloc[-1]
+                        
+                        if pd.isna(close) or pd.isna(sma150): continue
+                        
+                        # Apply Iron Dome Technical Filter LOCALLY
+                        # If price < sma150, we reject immediately without asking FMP
+                        # (Unless Regime is BEAR, but let's stick to Trend Following for filtering)
+                        if float(close) > float(sma150):
+                            survivors.append(ticker)
+                            
+                    except Exception:
+                        continue
+            except Exception as e:
+                print(f"  [BATCH ERROR] YF Download failed: {e}")
+                continue
             
-            for lens, lens_score in setup.lens_scores.items():
-                w = weights.get(lens, 1.0)
-                lens_score.weight = w
-                weighted_sum += lens_score.score * w
-                total_weight += w
+            print(f"  -> Survivors (Trend Positive): {len(survivors)}/{len(batch)}")
             
-            # Normalize to 0-100
-            if total_weight > 0:
-                setup.final_score = weighted_sum / total_weight
-            else:
-                setup.final_score = 0
+            # D. Deep Sentient Scan (FMP Heavy)
+            for ticker in survivors:
+                try:
+                    # Rate Limit Enforcer
+                    # We do ~3 calls per ticker.
+                    # We pause 0.5s per ticker to stay safe ~120 stocks/min (360 calls/min) - slightly aggressive?
+                    # Let's do 1.0s to be strictly safe (<180 calls/min).
+                    time.sleep(1.0) 
+                    
+                    setup = self.signal_engine.analyze_ticker(ticker, regime)
+                    deep_scan_count += 1
+                    
+                    if not setup.is_valid:
+                        # print(f"  [REJECT] {ticker}: {setup.rejection_reason}")
+                        continue
+                        
+                    # Apply AI Weights
+                    weighted_sum = 0
+                    total_weight = 0
+                    
+                    for lens, lens_score in setup.lens_scores.items():
+                        w = weights.get(lens, 1.0)
+                        lens_score.weight = w
+                        weighted_sum += lens_score.score * w
+                        total_weight += w
+                    
+                    # Normalize to 0-100
+                    if total_weight > 0:
+                        setup.final_score = weighted_sum / total_weight
+                    else:
+                        setup.final_score = 0
+                    
+                    if setup.final_score > 75:
+                        print(f"  [CANDIDATE] {ticker} | Score: {setup.final_score:.1f}")
+                        candidates.append(setup)
+                except Exception as e:
+                    print(f"  [ERROR] {ticker}: {e}")
             
-            # Simple Threshold check (e.g., > 75)
-            if setup.final_score > 75:
-                print(f"  [CANDIDATE] {ticker} | Score: {setup.final_score:.1f}")
-                candidates.append(setup)
+            # Checkpoint
+            if deep_scan_count > 0 and deep_scan_count % 50 == 0:
+                print("  [LIMIT] Pausing 10s to cool down API...")
+                time.sleep(10)
 
         # 4. PORTFOLIO OPTIMIZATION (Layer 4)
         top_picks = sorted(candidates, key=lambda x: x.final_score, reverse=True)
