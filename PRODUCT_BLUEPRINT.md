@@ -1,60 +1,107 @@
-# 🚀 PRODUCT BLUEPRINT: The "Sniper" Algo-Bot (Full Stack)
+# 📜 SENTIENT SNIPER: SYSTEM BIBLE & LOGIC REFERENCE
 
-## 1. System Vision
-We are building a self-hosted, closed-loop algorithmic trading system.
-**Core Philosophy:** "Sniper Mode" - The system is NOT forced to trade daily. It only signals when multiple data sources (Technical + Fundamental + Social) align with high probability (>85% Confidence Score).
-**End Goal:** A dashboard showing live opportunities and a "Paper Trading" simulation tracking a virtual $100k portfolio.
-
----
-
-## 2. Architecture (Single Stack)
-We will use a pure Python stack to allow the Anti-Gravity Agent to manage the entire lifecycle easily.
-*   **Backend:** Python 3.11+
-*   **Database:** Supabase (PostgreSQL) - For storing historic data, trades, and simulation state.
-*   **Frontend:** **Streamlit** (Python-based UI). This allows us to build the dashboard directly from the Python logic without needing a separate React app.
-*   **Hosting:** Local / Cloud Run (handled by Anti-Gravity environment).
-
-## 3. Data Sources (The Aggregation Layer)
-The bot must aggregate data to confirm signals (cross-validation):
-1.  **Primary:** Financial Modeling Prep (FMP) API -> Price, Technicals, Sentiment, Insider.
-2.  **Secondary (Verification):** `yfinance` -> Verify price action and volume anomalies.
-3.  **News Logic:** Fetch news via FMP/NewsAPI and use LLM to score them (-1 to +1).
+> [!IMPORTANT]
+> **This document is the SINGLE SOURCE OF TRUTH.**
+> Any code changes must align with the logic defined here. If logic changes, update this document first.
 
 ---
 
-## 4. The Logic: "Sniper" Scoring Engine
-The system calculates a `ConfidenceScore` (0-100).
-*   **Hard Filters:** Price > $2, Market Cap > $100M, Dollar Volume > $5M.
-*   **The "Green Light" Threshold:** Only stocks with Score > **85** appear in the "Active Signal" table.
-*   **Scoring Factors:**
-    *   *Technical:* Trend Alignment + Breakout Proximity.
-    *   *Social:* Spike in social volume + Positive sentiment (AI analyzed).
-    *   *Insider:* Recent cluster buying.
+## 1. Core Architecture (The 5 Layers)
+
+The system operates as a **Monolithic Python Application** (`main_sentient.py`) orchestrating 5 distinct layers:
+
+1.  **Iron Dome (`iron_dome.py`)**: Global Safety & Liquidity verification.
+2.  **Data Ingestion (`data_ingestion.py`)**: Hybrid fetching engine (FMP + YFinance).
+3.  **Signal Engine (`signal_engine.py`)**: 4-Dimensional Scoring & Dynamic Averaging.
+4.  **Reinforcement Brain (`reinforcement_learner.py`)**: Adaptive weighting (currently static 1.0 until live feedback loop active).
+5.  **Portfolio Manager (`portfolio_manager.py`)**: Risk checks & Diversification (Top 10 max).
 
 ---
 
-## 5. UI/UX: The Dashboard (Streamlit)
-The interface will have two main tabs:
+## 2. The Hybrid Data Engine (Tiered Sourcing)
 
-### Tab A: The Scanner (The Sniper Scope)
-*   **Live Table:** Shows only the stocks that passed the threshold today.
-*   **Columns:** Ticker, Price, Confidence Score, "Reason for Entry" (AI generated text).
-*   **Visuals:** Green/Red indicators based on real-time price change since signal.
+To prevent "Missing Data" from breaking the scan, every data point has a redundant fallback.
 
-### Tab B: Paper Trading Simulation (Future Phase)
-*   **Virtual Balance:** Starts at $100,000.
-*   **Position Sizing:**
-    *   Score 85-90: Allocate 2% of portfolio.
-    *   Score 90-95: Allocate 5% of portfolio.
-    *   Score 95+: Allocate 8% of portfolio.
-*   **Metrics:** Total P&L, Win Rate %, Equity Curve Graph.
+| Metric | Primary Source (Tier A) | Secondary Source (Tier B) | Logic |
+| :--- | :--- | :--- | :--- |
+| **Market Universe** | FMP Screener / NASDAQ | FMP (Limit 10k) | Fetches raw list of tickers. |
+| **Price/Volume** | Yahoo Finance (Batch) | N/A | Used for fast technical filtering. |
+| **Technicals (SMA150)** | Yahoo Finance | N/A | Trend Verification. |
+| **Insiders** | FMP Insider Transaction | **YFinance Insider** | Scans for "Buy" keywords in last 90 days. |
+| **Institutions** | FMP Holders | **YFinance Holders** | Checks for >10M shares held by top funds. |
+| **Fundamentals** | FMP Ratios (ROE/PEG) | **YFinance Info** | Validates Financial Health. |
+| **News Sentiment** | Yahoo Finance News | FMP Social | NLP Analysis of titles. |
+
+> [!NOTE]
+> If a Data Point is **Totally Unavailable** (both tiers fail), the engine returns `None`.
 
 ---
 
-## 6. Execution Roadmap for Agents
-1.  **Setup:** Initialize Python env, install `streamlit`, `supabase`, `requests`, `pandas`.
-2.  **Keys:** Securely load API keys from `.env` file.
-3.  **Backend:** Build the `DataAggregator` class (fetches from FMP + yfinance).
-4.  **Logic:** Build the `SniperScorer` class (implements the math).
-5.  **Database:** Create Supabase tables (`signals`, `portfolio_sim`).
-6.  **Frontend:** Build `app.py` using Streamlit to visualize the DB data.
+## 3. The Filtration Pipeline (Funnel)
+
+The scan processes stocks in a strict Funnel to optimize speed and API usage.
+
+1.  **Universe Fetch**: ~8,000 Stocks.
+2.  **Batch Filter (Fast)**:
+    *   **Price Check**: Must be > $2.00.
+    *   **Liquidity Check**: (Price * AvgVolume) > $5,000,000.
+    *   **Trend Check**: Price > SMA150 (Long Term Trend).
+    *   *Result*: Reduces list to ~1,500 candidates.
+3.  **Deep Scan (Slow)**:
+    *   Iterates survivors with **1.0s Sleep** (Rate Limit Safety).
+    *   Fetches deep data (Insiders, Fundamentals).
+    *   Result: ~1,500 Scored Setups.
+
+---
+
+## 4. The Scoring Logic (Dynamic Averaging)
+
+The system does **NOT** penalize stocks for missing data. It uses **Dynamic Averaging**.
+
+### The Lenses
+1.  **Quant**: Dark Pool / Institutional Money.
+2.  **Oracle**: Fundamental Quality (ROE, PEG) + Sentiment.
+3.  **Hunter**: Insider Activity (Cluster Buys).
+4.  **Chartist**: Technicals (RSI, Volatility).
+
+### The Formula
+$$ \text{Final Score} = \frac{\sum(\text{Active Lens Scores})}{\text{Count of Active Lenses}} $$
+
+**Example**:
+*   Chart: 80
+*   Oracle: 80
+*   Hunter: *Missing/No Data* (Ignored)
+*   **Final Score**: (80 + 80) / 2 = **80**. (Passes).
+*   *Legacy (Bad) Score*: (80 + 80 + 0) / 3 = 53. (Fails).
+
+### Thresholds
+*   **Candidate**: Final Score > **75**.
+*   **Selection**: Top 10 Highest Scores are saved to DB.
+
+---
+
+## 5. Operational Rules
+
+1.  **Rate Limits**:
+    *   **Deep Scan Sleep**: **1.0 Seconds** per stock.
+    *   *Reason*: Hybrid Engine makes ~3 API calls per stock. 3 * 60 = 180 calls/min. (Limit is 300).
+    *   *Constraint*: Do NOT lower this below 0.8s.
+
+2.  **Cloud Automation**:
+    *   Platform: GitHub Actions.
+    *   Schedule: Daily at 13:45 UTC.
+    *   **Secrets Required**: `FMP_API_KEY`, `GOOGLE_API_KEY`, `SUPABASE_KEY` (No underscore!), `SUPABASE_URL`.
+    *   *Note*: Cloud logs are NOT visible locally. Check DB for results.
+
+3.  **Local "Turbo" Test**:
+    *   Command: `python main_sentient.py --test`
+    *   Scope: 50 Stocks.
+    *   Use this to verify system health before full scans.
+
+---
+
+## 6. Feedback & Output
+
+*   **Heartbeat**: Console prints `[ALIVE] Scanned X/Y...` every 5 stocks during Deep Scan.
+*   **Dashboard**: Streamlit (`dashboard.py`) visualizes `sniper_signals` table.
+*   **Memory**: Execution saves snapshot to `sentient_memory` for future AI training.

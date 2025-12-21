@@ -100,6 +100,12 @@ class SignalEngine:
             raw_sum += min(chartist_raw, 100)
             active_count += 1
 
+        # --- ENSURE ALL LENSES HAVE A SCORE (Even if 0) ---
+        # This prevents crashes in main_sentient.py if a data source is disabled (e.g. FMP Starter Plan)
+        for lens in [Lens.QUANT, Lens.ORACLE, Lens.HUNTER, Lens.CHARTIST]:
+            if lens not in scores:
+                scores[lens] = LensScore(lens, 0.0, 0.0, details={"status": "Skipped/NoData"})
+
         # --- PACKAGING ---
         
         # Base Score (Dynamic Average)

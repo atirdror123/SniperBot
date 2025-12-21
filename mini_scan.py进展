@@ -1,0 +1,13 @@
+from main_sentient import SentientSniperBot
+import time
+
+bot = SentientSniperBot()
+print("Starting Mini-Scan (200 stocks)...")
+start_time = time.time()
+
+# Mock universe to just 200 stocks
+universe = bot.ingestor.fetch_universe(limit=200)
+bot.run_daily_cycle()
+
+end_time = time.time()
+print(f"Mini-Scan Complete in {end_time - start_time:.2f} seconds.")

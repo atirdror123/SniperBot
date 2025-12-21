@@ -129,17 +129,17 @@ class DataIngestor:
         """
         inst_buying = False
         
-        # 1. Try FMP (Tier A)
-        if self.api_key:
-            data = self._get_json(f"institutional-holder/{ticker}")
-            if data:
-                total_held = sum([x.get('shares', 0) for x in data[:5]])
-                if total_held > 10_000_000: inst_buying = True
-                return {
-                    "net_signature_volume": 0,
-                    "gamma_exposure": 0,
-                    "institutions_buying": inst_buying
-                }
+        # 1. Try FMP (Tier A) - DISABLED (Plan Restriction 403)
+        # if self.api_key:
+        #     data = self._get_json(f"institutional-holder/{ticker}")
+        #     if data:
+        #         total_held = sum([x.get('shares', 0) for x in data[:5]])
+        #         if total_held > 10_000_000: inst_buying = True
+        #         return {
+        #             "net_signature_volume": 0,
+        #             "gamma_exposure": 0,
+        #             "institutions_buying": inst_buying
+        #         }
 
         # 2. Try YFinance (Tier B)
         try:
@@ -153,6 +153,10 @@ class DataIngestor:
                 if total_shares > 10_000_000: inst_buying = True
         except: pass
         
+        # We return None to avoid hallucinating volume
+        if not inst_buying:
+            return None
+            
         return {
             "net_signature_volume": 0,
             "gamma_exposure": 0,
@@ -163,25 +167,25 @@ class DataIngestor:
         """
         [Hybrid] FMP Insider -> YF Insider Fallback.
         """
-        # 1. Try FMP (Tier A)
-        if self.api_key:
-            data = self._get_json(f"insider-trading/{ticker}", params={"limit": 100})
-            if data:
-                buys_90d = 0
-                ceo_buy = False
-                cutoff = datetime.now() - timedelta(days=90)
-                for trade in data:
-                    try:
-                        d_str = trade.get('transactionDate', '')
-                        if not d_str: continue
-                        t_date = datetime.strptime(d_str, "%Y-%m-%d")
-                        if t_date < cutoff: continue
-                        t_type = trade.get('transactionType', '').lower()
-                        if 'buy' in t_type or 'purchase' in t_type:
-                            buys_90d += 1
-                            if 'ceo' in trade.get('typeOfOwner', '').lower(): ceo_buy = True
-                    except: continue
-                return {"net_insider_buys_90d": buys_90d, "ceo_purchase": ceo_buy}
+        # 1. Try FMP (Tier A) - DISABLED (Plan Restriction 403)
+        # if self.api_key:
+        #     data = self._get_json(f"insider-trading/{ticker}", params={"limit": 100})
+        #     if data:
+        #         buys_90d = 0
+        #         ceo_buy = False
+        #         cutoff = datetime.now() - timedelta(days=90)
+        #         for trade in data:
+        #             try:
+        #                 d_str = trade.get('transactionDate', '')
+        #                 if not d_str: continue
+        #                 t_date = datetime.strptime(d_str, "%Y-%m-%d")
+        #                 if t_date < cutoff: continue
+        #                 t_type = trade.get('transactionType', '').lower()
+        #                 if 'buy' in t_type or 'purchase' in t_type:
+        #                     buys_90d += 1
+        #                     if 'ceo' in trade.get('typeOfOwner', '').lower(): ceo_buy = True
+        #             except: continue
+        #         return {"net_insider_buys_90d": buys_90d, "ceo_purchase": ceo_buy}
 
         # 2. Try YFinance (Tier B)
         # Note: YF insider_transactions is often messy, but let's try.
@@ -207,10 +211,10 @@ class DataIngestor:
                         # CEO check hard on YF without precise 'Relation' column sometimes
         except: pass
         
-        # We return 0 if failed, but we tried our best.
-        # Ideally we return None if we are SURE we have NO data, but YF failures are common.
-        # Let's return None only if strictly blocked, but here we have a Tier B attempt.
-        # If Tier B fails, it's fair to say "0 activity found".
+        # We return None if failed to avoid false positive signals
+        if buys_90d == 0 and not ceo_buy:
+             return None
+             
         return {"net_insider_buys_90d": buys_90d, "ceo_purchase": ceo_buy}
 
     def get_earnings_sentiment(self, ticker: str) -> Dict[str, Any]:
@@ -249,7 +253,7 @@ class DataIngestor:
                     s = data[0].get('stocktwitsSentiment', 0)
                     return min(100, max(0, s * 100))
                  except: pass
-        return 50.0
+        return 0.0
     
     def get_fundamentals(self, ticker: str) -> Dict[str, Any]:
         """
@@ -261,19 +265,29 @@ class DataIngestor:
         data_found = False
 
         # 1. FMP (Tier A)
+        # 1. FMP (Tier A) - STABLE API
         if self.api_key:
-            ratios = self._get_json(f"ratios-ttm/{ticker}")
-            metrics = self._get_json(f"key-metrics-ttm/{ticker}")
-            
-            if ratios and isinstance(ratios, list):
-                roe = ratios[0].get('returnOnEquityTTM', 0.0) or 0.0
-                peg = ratios[0].get('pegRatioTTM', 0.0) or 0.0
-                data_found = True
+            # Use Direct URL for Stable Endpoint
+            try:
+                # Ratios
+                url_r = f"https://financialmodelingprep.com/stable/ratios-ttm?symbol={ticker}&apikey={self.api_key}"
+                ratios = requests.get(url_r, timeout=10).json()
                 
-            if metrics and isinstance(metrics, list):
-                fcf = metrics[0].get('freeCashFlowTTM', 0.0) or 0.0
-                fcf_pos = fcf > 0
-                data_found = True
+                # Metrics
+                url_m = f"https://financialmodelingprep.com/stable/key-metrics-ttm?symbol={ticker}&apikey={self.api_key}"
+                metrics = requests.get(url_m, timeout=10).json()
+
+                if ratios and isinstance(ratios, list):
+                    roe = ratios[0].get('returnOnEquityTTM', 0.0) or 0.0
+                    peg = ratios[0].get('pegRatioTTM', 0.0) or 0.0
+                    data_found = True
+                    
+                if metrics and isinstance(metrics, list):
+                    fcf = metrics[0].get('freeCashFlowTTM', 0.0) or 0.0
+                    fcf_pos = fcf > 0
+                    data_found = True
+            except Exception as e:
+                print(f"[DATA] FMP Fundamentals failed: {e}")
         
         # 2. YFinance (Tier B) if FMP failed
         if not data_found:

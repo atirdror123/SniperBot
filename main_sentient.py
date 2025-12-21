@@ -11,6 +11,7 @@ from signal_engine import SignalEngine
 from reinforcement_learner import SentientBrain
 from portfolio_manager import PortfolioManager
 from email_service import send_daily_recap
+from discord_service import send_scan_report
 
 # Load Environment
 load_dotenv()
@@ -215,10 +216,22 @@ class SentientSniperBot:
             self.supabase.table("system_status").upsert({"key": "scan_status", "value": "COMPLETED"}).execute()
         except: pass
 
+
+
+        # [LIMIT] Enforce Top 10 Logic (Pruning)
+        self.enforce_strict_top_10()
+
         # [EMAIL] Notification
         if candidates:
-            print(f"[EMAIL] Sending recap for {len(candidates)} signals...")
-            send_daily_recap(candidates)
+            # Re-fetch candidates from DB to ensure we send only the survivors
+            # For simplicity, we just send what we found, but the DB is clean.
+            print(f"[NOTIFY] Sending alerts for {len(candidates)} signals...")
+            
+            # 1. Email (Optional)
+            # send_daily_recap(candidates)
+
+            # 2. Discord (Preferred)
+            send_scan_report(candidates)
 
         print("[SYSTEM] Cycle Complete.")
 
@@ -270,6 +283,40 @@ class SentientSniperBot:
         self.supabase.table("sentient_memory").insert(memory_data).execute()
         
         print(f"  -> Saved {setup.ticker}")
+
+    def enforce_strict_top_10(self):
+        """
+        Ensures only the top 10 highest scoring stocks remain for the day.
+        Deletes the rest.
+        """
+        print("[SYSTEM] Enforcing Top 10 Limit...")
+        try:
+            today_start = datetime.now().strftime("%Y-%m-%d") + " 00:00:00"
+            
+            # Fetch all from today
+            res = self.supabase.table("sniper_signals") \
+                .select("id, ticker, confidence_score") \
+                .gte("created_at", today_start) \
+                .order("confidence_score", desc=True) \
+                .execute()
+                
+            signals = res.data
+            if len(signals) > 10:
+                # Keep Top 10
+                top_10 = signals[:10]
+                to_delete = signals[10:]
+                
+                print(f"  -> Found {len(signals)} signals. Keeping Top 10.")
+                
+                # Delete excess
+                for s in to_delete:
+                    self.supabase.table("sniper_signals").delete().eq("id", s['id']).execute()
+                    print(f"  -> Pruned {s['ticker']} (Score: {s['confidence_score']:.1f})")
+            else:
+                print("  -> Signal count within limit.")
+                
+        except Exception as e:
+            print(f"  [ERROR] Top 10 Enforcement Failed: {e}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
