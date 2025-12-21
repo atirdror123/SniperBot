@@ -146,7 +146,7 @@ def get_ai_summary(ticker, signal_data_str):
         return "⚠️ Google API Key not found. Cannot generate AI summary."
     
     try:
-        model = genai.GenerativeModel('gemini-flash-latest')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         prompt = f"""
         Analyze this stock signal data for {ticker}:
         {signal_data_str}
@@ -161,10 +161,28 @@ def get_ai_summary(ticker, signal_data_str):
     except Exception as e:
         return f"AI Error: {str(e)}"
 
+def fetch_system_status():
+    if not supabase: return "UNKNOWN"
+    try:
+        res = supabase.table('system_status').select("value").eq("key", "scan_status").execute()
+        if res.data:
+            return res.data[0]['value']
+    except: pass
+    return "IDLE"
+
 # --- 3. UI LAYOUT ---
 
 # Sidebar
 st.sidebar.title("TARGET LOCK")
+
+# Status Badge
+status = fetch_system_status()
+if status == "RUNNING":
+    st.sidebar.markdown("### 🟢 ACTIVE SCAN")
+    st.sidebar.caption("Processing market data...")
+else:
+    st.sidebar.markdown(f"### 🔴 {status}")
+
 st.sidebar.markdown("---")
 if st.sidebar.button("🔄 REFRESH DATA"):
     st.cache_data.clear()

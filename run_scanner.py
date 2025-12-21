@@ -28,11 +28,12 @@ def get_all_tickers():
     
     # Method 1: NASDAQ API (Free, ~7000+ stocks)
     try:
-        url = "https://api.nasdaq.com/api/screener/stocks?tableonly=true&limit=25&offset=0&download=true"
+        # Increase limit to 25000 to capture all universe
+        url = "https://api.nasdaq.com/api/screener/stocks?tableonly=true&limit=25000&offset=0&download=true"
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
-        response = requests.get(url, headers=headers)
+        response = requests.get(url, headers=headers, timeout=30)
         data = response.json()
         
         if data['data'] and data['data']['rows']:

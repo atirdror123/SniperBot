@@ -46,7 +46,7 @@ class SentientBrain:
                         Lens.CHARTIST: row['w_chartist']
                     }
             except Exception as e:
-                print(f"[BRAIN] Error fetching weights: {e}")
+                print(f"[BRAIN] Error fetching weights: {e}", flush=True)
 
         # Default Fallback (if DB fails or not connected)
         regime_defaults = {

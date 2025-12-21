@@ -13,6 +13,8 @@ jobs:
     env:
       SUPABASE_URL: '${{ secrets.SUPABASE_URL }}'
       SUPABASE_KEY: '${{ secrets.SUPABASEKEY }}'
+      FMP_API_KEY: '${{ secrets.FMP_API_KEY }}'
+      GOOGLE_API_KEY: '${{ secrets.GOOGLE_API_KEY }}'
 
     steps:
     - name: Checkout code

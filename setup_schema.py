@@ -104,6 +104,17 @@ def get_schema_sql():
         regime_at_entry TEXT,
         features_snapshot JSONB
     );
+
+    -- 3. System Status (For Dashboard)
+    CREATE TABLE IF NOT EXISTS system_status (
+        key TEXT PRIMARY KEY,
+        value TEXT,
+        last_updated TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+
+    -- Insert default
+    INSERT INTO system_status (key, value) VALUES ('scan_status', 'IDLE')
+    ON CONFLICT (key) DO NOTHING;
     """
 
 def setup_database():

@@ -10,6 +10,7 @@ from data_ingestion import DataIngestor
 from signal_engine import SignalEngine
 from reinforcement_learner import SentientBrain
 from portfolio_manager import PortfolioManager
+from email_service import send_daily_recap
 
 # Load Environment
 load_dotenv()
@@ -56,9 +57,15 @@ class SentientSniperBot:
             print(f"[SYSTEM] Error wiping signals: {e}")
 
     def run_daily_cycle(self):
-        print("\n" + "="*50)
-        print(f"SENTIENT SNIPER - DAILY CYCLE - {datetime.now()}")
-        print("="*50)
+        print("\n[SYSTEM] STARTING DAILY CYCLE...", flush=True)
+        print("="*50, flush=True)
+        print(f"SENTIENT SNIPER - DAILY CYCLE - {datetime.now()}", flush=True)
+        print("="*50, flush=True)
+
+        # [STATUS] Update Dashboard
+        try:
+            self.supabase.table("system_status").upsert({"key": "scan_status", "value": "RUNNING"}).execute()
+        except: pass
 
         # 1. IRON DOME (Layer 1)
         safety, regime = self.iron_dome.check_market_environment()
@@ -106,7 +113,7 @@ class SentientSniperBot:
             survivors = []
             try:
                 # Download batch data efficiently
-                data = yf.download(batch, period="1y", interval="1d", group_by='ticker', progress=False, threads=True)
+                data = yf.download(batch, period="1y", interval="1d", group_by='ticker', progress=False, threads=True, auto_adjust=True)
                 
                 for ticker in batch:
                     try:
@@ -129,7 +136,14 @@ class SentientSniperBot:
                         # Apply Iron Dome Technical Filter LOCALLY
                         # If price < sma150, we reject immediately without asking FMP
                         # (Unless Regime is BEAR, but let's stick to Trend Following for filtering)
-                        if float(close) > float(sma150):
+                        trend_ok = float(close) > float(sma150)
+                        
+                        # Liquidity Check (Price > $2, Vol*Price > $5M)
+                        # We calculate simple avg volume (20 day)
+                        avg_vol = df['Volume'].rolling(window=20).mean().iloc[-1]
+                        liquidity_ok = self.iron_dome.check_liquidity(ticker, float(close), float(avg_vol))
+                        
+                        if trend_ok and liquidity_ok:
                             survivors.append(ticker)
                             
                     except Exception:
@@ -142,15 +156,22 @@ class SentientSniperBot:
             
             # D. Deep Sentient Scan (FMP Heavy)
             for ticker in survivors:
+                # Get correct DF slice for this ticker
+                ticker_df = data[ticker] if len(batch) > 1 else data
+                
                 try:
-                    # Rate Limit Enforcer
-                    # We do ~3 calls per ticker.
-                    # We pause 0.5s per ticker to stay safe ~120 stocks/min (360 calls/min) - slightly aggressive?
-                    # Let's do 1.0s to be strictly safe (<180 calls/min).
+                    # Heartbeat for User Reassurance
+                    print(f"  [SCAN] {ticker} ({deep_scan_count+1}/{len(survivors)} in batch)...")
+                    
+                    # Rate Limit Optimization
                     time.sleep(1.0) 
                     
-                    setup = self.signal_engine.analyze_ticker(ticker, regime)
+                    setup = self.signal_engine.analyze_ticker(ticker, regime, df=ticker_df) 
                     deep_scan_count += 1
+                    
+                    # Heartbeat for User Reassurance
+                    if deep_scan_count % 5 == 0:
+                        print(f"  [ALIVE] Scanned {deep_scan_count} / {len(survivors)} potential targets... (Candidates found so far: {len(candidates)})")
                     
                     if not setup.is_valid:
                         # print(f"  [REJECT] {ticker}: {setup.rejection_reason}")
@@ -172,28 +193,32 @@ class SentientSniperBot:
                     else:
                         setup.final_score = 0
                     
+                    # Threshold Reverted to 75 (Strict Quality)
                     if setup.final_score > 75:
                         print(f"  [CANDIDATE] {ticker} | Score: {setup.final_score:.1f}")
                         candidates.append(setup)
+                        
+                        # [REAL-TIME SAVE]
+                        # Immediate save to DB so Dashboard updates instantly
+                        self.save_setup(setup, safety)
+
                 except Exception as e:
                     print(f"  [ERROR] {ticker}: {e}")
             
             # Checkpoint
-            if deep_scan_count > 0 and deep_scan_count % 50 == 0:
-                print("  [LIMIT] Pausing 10s to cool down API...")
-                time.sleep(10)
+            if deep_scan_count > 0 and deep_scan_count % 100 == 0:
+                print("  [LIMIT] Pausing 2s to cool down API...")
+                time.sleep(2)
 
-        # 4. PORTFOLIO OPTIMIZATION (Layer 4)
-        top_picks = sorted(candidates, key=lambda x: x.final_score, reverse=True)
-        top_picks = self.portfolio_manager.filter_for_diversification(top_picks)
-        
-        # Limit to Top 10
-        top_10 = top_picks[:10]
-        
-        # 5. EXECUTION & MEMORY (Layer 5)
-        print(f"\n[EXECUTION] Storing {len(top_10)} setups to Database...")
-        for setup in top_10:
-            self.save_setup(setup, safety)
+        # [STATUS] Cycle Complete
+        try:
+            self.supabase.table("system_status").upsert({"key": "scan_status", "value": "COMPLETED"}).execute()
+        except: pass
+
+        # [EMAIL] Notification
+        if candidates:
+            print(f"[EMAIL] Sending recap for {len(candidates)} signals...")
+            send_daily_recap(candidates)
 
         print("[SYSTEM] Cycle Complete.")
 
@@ -213,6 +238,22 @@ class SentientSniperBot:
                 "weights_used": {k.name: v.weight for k, v in setup.lens_scores.items()}
             }
         }
+        
+        # [DEDUPLICATION] Check if already exists for today
+        try:
+            today_start = datetime.now().strftime("%Y-%m-%d") + " 00:00:00"
+            existing = self.supabase.table("sniper_signals") \
+                .select("id") \
+                .eq("ticker", setup.ticker) \
+                .gte("created_at", today_start) \
+                .execute()
+            
+            if existing.data and len(existing.data) > 0:
+                print(f"  -> Skipping {setup.ticker} (Already saved today)")
+                return
+        except Exception as e:
+            print(f"  [WARN] Dup check failed: {e}")
+
         self.supabase.table("sniper_signals").insert(signal_data).execute()
         
         # 2. Save to Sentient Memory (for Training)
