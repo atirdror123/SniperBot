@@ -146,7 +146,7 @@ def get_ai_summary(ticker, signal_data_str):
         return "⚠️ Google API Key not found. Cannot generate AI summary."
     
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-flash-latest')
         prompt = f"""
         Analyze this stock signal data for {ticker}:
         {signal_data_str}
