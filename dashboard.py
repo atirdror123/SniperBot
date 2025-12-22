@@ -367,6 +367,10 @@ if not df.empty:
             categories = ['Quant', 'Oracle', 'Hunter', 'Chartist']
             values = [row['s_quant'], row['s_oracle'], row['s_hunter'], row['s_chartist']]
             
+            # Close the loop for a perfect shape
+            categories = [*categories, categories[0]]
+            values = [*values, values[0]]
+            
             fig = go.Figure()
             fig.add_trace(go.Scatterpolar(
                 r=values,
