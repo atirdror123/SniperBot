@@ -153,10 +153,40 @@ class DataIngestor:
                 if total_shares > 10_000_000: inst_buying = True
         except: pass
         
-        # We return None to avoid hallucinating volume
-        if not inst_buying:
-            return None
+    def get_dark_pool_activity(self, ticker: str) -> Dict[str, Any]:
+        """
+        [Hybrid] FMP -> YFinance Fallback for Institutional Data.
+        """
+        inst_buying = False
+        
+        # 1. Try YFinance Major Holders (Tier B - Free)
+        try:
+            import yfinance as yf
+            t = yf.Ticker(ticker)
+            holders = t.major_holders
             
+            if holders is not None and not holders.empty:
+                # Parse breakdown (Format changed recently in YF)
+                # Usually row 0: Insiders, row 1: Institutions %
+                # Let's try to find key terms in column 0
+                df = holders.copy()
+                # Rename cols to be safe if they lack headers
+                if df.shape[1] == 2:
+                    df.columns = ['Breakdown', 'Value']
+                
+                # Look for "institutions"
+                mask = df['Breakdown'].astype(str).str.contains('institutionsPercentHeld|Institutions', case=False, na=False)
+                if mask.any():
+                   val_row = df[mask].iloc[0]
+                   val = val_row['Value']
+                   # val might be 0.644 or "64.4%"
+                   if isinstance(val, str) and '%' in val:
+                       val = float(val.replace('%', '')) / 100.0
+                   
+                   if float(val) > 0.40: # If > 40% owned by institutions, considered bullish/safe
+                       inst_buying = True
+        except: pass
+
         return {
             "net_signature_volume": 0,
             "gamma_exposure": 0,
@@ -167,54 +197,38 @@ class DataIngestor:
         """
         [Hybrid] FMP Insider -> YF Insider Fallback.
         """
-        # 1. Try FMP (Tier A) - DISABLED (Plan Restriction 403)
-        # if self.api_key:
-        #     data = self._get_json(f"insider-trading/{ticker}", params={"limit": 100})
-        #     if data:
-        #         buys_90d = 0
-        #         ceo_buy = False
-        #         cutoff = datetime.now() - timedelta(days=90)
-        #         for trade in data:
-        #             try:
-        #                 d_str = trade.get('transactionDate', '')
-        #                 if not d_str: continue
-        #                 t_date = datetime.strptime(d_str, "%Y-%m-%d")
-        #                 if t_date < cutoff: continue
-        #                 t_type = trade.get('transactionType', '').lower()
-        #                 if 'buy' in t_type or 'purchase' in t_type:
-        #                     buys_90d += 1
-        #                     if 'ceo' in trade.get('typeOfOwner', '').lower(): ceo_buy = True
-        #             except: continue
-        #         return {"net_insider_buys_90d": buys_90d, "ceo_purchase": ceo_buy}
-
+        buys_90d = 0
+        ceo_buy = False
+        
         # 2. Try YFinance (Tier B)
-        # Note: YF insider_transactions is often messy, but let's try.
         try:
             import yfinance as yf
             t = yf.Ticker(ticker)
             trans = t.insider_transactions
             
-            buys_90d = 0
-            ceo_buy = False
-            
             if trans is not None and not trans.empty:
-                # Filter by date? YF index is usually date? No, 'Start Date'? 
-                # Let's count recent 'Buy'/'Purchase' rows if possible
-                # If strict date parsing is hard, we look at top 10 rows for "Buy"
+                # Columns: ['Shares', 'Value', 'URL', 'Text', 'Transaction', 'Start Date', 'Ownership']
+                # Filter for recent buys
                 recent = trans.head(20)
-                # Check columns. usually: ['Shares', 'Value', 'Text', 'Start Date']
-                # 'Text' often contains "Purchase at price..."
+                
                 for idx, row in recent.iterrows():
+                    # Check Transaction Type or Text
+                    t_type = str(row.get('Transaction', '')).lower()
                     text = str(row.get('Text', '')).lower()
-                    if 'purchase' in text or 'buy' in text:
+                    
+                    is_buy = 'buy' in t_type or 'purchase' in t_type or 'buy' in text or 'purchase' in text
+                    
+                    if is_buy:
                         buys_90d += 1
-                        # CEO check hard on YF without precise 'Relation' column sometimes
+                        # Check if CEO
+                        owner = str(row.get('Ownership', '')).lower() 
+                        # Or sometimes ownership is the name, relationship is missing. 
+                        # YF data is tricky. We assume 'D' is Direct.
+                        # Strict CEO check is hard. We'll skip forcing CEO buy unless text says so.
+                        if 'ceo' in text or 'chief executive' in text:
+                            ceo_buy = True
         except: pass
         
-        # We return None if failed to avoid false positive signals
-        if buys_90d == 0 and not ceo_buy:
-             return None
-             
         return {"net_insider_buys_90d": buys_90d, "ceo_purchase": ceo_buy}
 
     def get_earnings_sentiment(self, ticker: str) -> Dict[str, Any]:
