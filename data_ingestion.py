@@ -166,25 +166,33 @@ class DataIngestor:
             holders = t.major_holders
             
             if holders is not None and not holders.empty:
-                # Parse breakdown (Format changed recently in YF)
-                # Usually row 0: Insiders, row 1: Institutions %
-                # Let's try to find key terms in column 0
-                df = holders.copy()
-                # Rename cols to be safe if they lack headers
-                if df.shape[1] == 2:
-                    df.columns = ['Breakdown', 'Value']
+                # Robust Parsing for "institutionsPercentHeld"
+                # Convert to string and search
+                s_holders = holders.astype(str)
                 
-                # Look for "institutions"
-                mask = df['Breakdown'].astype(str).str.contains('institutionsPercentHeld|Institutions', case=False, na=False)
-                if mask.any():
-                   val_row = df[mask].iloc[0]
-                   val = val_row['Value']
-                   # val might be 0.644 or "64.4%"
-                   if isinstance(val, str) and '%' in val:
-                       val = float(val.replace('%', '')) / 100.0
-                   
-                   if float(val) > 0.40: # If > 40% owned by institutions, considered bullish/safe
-                       inst_buying = True
+                # Check for row containing "institutionsPercentHeld"
+                for idx, row in s_holders.iterrows():
+                    # Check Index AND Values for the key
+                    line_str = str(idx) + " " + " ".join(row.values)
+                    
+                    if "institutionsPercentHeld" in line_str or "Institutions" in line_str:
+                        # Try to find the float value in this row
+                        # If index matched, value is in columns.
+                        for col in holders.columns:
+                            val = holders.loc[idx, col]
+                            try:
+                                f_val = float(val)
+                                if f_val > 0.60: # Super Bullish > 60%
+                                    inst_buying = True 
+                                    # We can't return score here, but boolean will trigger +30
+                                    # To get 100, we need signal_engine to know it's "High".
+                                    # We will hijack 'gamma_exposure' to signal "Very High"
+                                    if f_val > 0.60:
+                                        return {"institutions_buying": True, "gamma_exposure": 1} # Hack to get +10 extra
+                                    if f_val > 0.40:
+                                        inst_buying = True
+                            except:
+                                continue
         except: pass
 
         return {

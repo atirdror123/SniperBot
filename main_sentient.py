@@ -194,9 +194,8 @@ class SentientSniperBot:
                     else:
                         setup.final_score = 0
                     
-                    # Threshold Adjusted: 75 is too strict for current market/data. 
-                    # Lowering to 60 to ensure signals flow.
-                    if setup.final_score >= 60:
+                    # Threshold Reverted to 75 (Strict Quality)
+                    if setup.final_score >= 75:
                         print(f"  [CANDIDATE] {ticker} | Score: {setup.final_score:.1f}")
                         candidates.append(setup)
                         
