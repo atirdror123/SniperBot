@@ -182,15 +182,8 @@ class DataIngestor:
                             val = holders.loc[idx, col]
                             try:
                                 f_val = float(val)
-                                if f_val > 0.60: # Super Bullish > 60%
-                                    inst_buying = True 
-                                    # We can't return score here, but boolean will trigger +30
-                                    # To get 100, we need signal_engine to know it's "High".
-                                    # We will hijack 'gamma_exposure' to signal "Very High"
-                                    if f_val > 0.60:
-                                        return {"institutions_buying": True, "gamma_exposure": 1} # Hack to get +10 extra
-                                    if f_val > 0.40:
-                                        inst_buying = True
+                                if f_val > 0.40: # If > 40% owned by institutions, considered bullish/safe
+                                    inst_buying = True
                             except:
                                 continue
         except: pass

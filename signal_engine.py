@@ -53,8 +53,8 @@ class SignalEngine:
         # Lens A: QUANT
         # Logic: High Score if Dark Pool Activity is present
         if dark_data:
-            quant_raw = 60 # Boost Base to 60 for having data
-            if dark_data.get('institutions_buying'): quant_raw += 30 # +30 = 90
+            quant_raw = 50
+            if dark_data.get('institutions_buying'): quant_raw += 30
             if dark_data.get('gamma_exposure', 0) > 0: quant_raw += 10
             scores[Lens.QUANT] = LensScore(Lens.QUANT, min(quant_raw, 100), 1.0, details=dark_data)
             raw_sum += min(quant_raw, 100)
@@ -63,10 +63,10 @@ class SignalEngine:
         # Lens B: ORACLE
         # Logic: Buffett Metrics + NLP
         if funds and earnings_data:
-            oracle_raw = 60 # Boost Base
+            oracle_raw = 50
             if funds.get('roe', 0) > 0.15: oracle_raw += 20
             if funds.get('peg_ratio', 100) < 2.0: oracle_raw += 10
-            if earnings_data.get('sentiment_score', 0) > 0: oracle_raw += 10 # Any positive sentiment
+            if earnings_data.get('sentiment_score', 0) > 0.2: oracle_raw += 20
             scores[Lens.ORACLE] = LensScore(Lens.ORACLE, min(oracle_raw, 100), 1.0, details={**funds, **earnings_data})
             raw_sum += min(oracle_raw, 100)
             active_count += 1
@@ -74,13 +74,9 @@ class SignalEngine:
         # Lens C: HUNTER
         # Logic: Insider Buys + Social
         if insider_data:
-            hunter_raw = 60 # Boost Base
-            # Even 1 buy is good
-            buys = insider_data.get('net_insider_buys_90d', 0)
-            if buys >= 1: hunter_raw += 20
-            if buys >= 3: hunter_raw += 10
-            if insider_data.get('ceo_purchase'): hunter_raw += 10
-            
+            hunter_raw = 50
+            if insider_data.get('net_insider_buys_90d', 0) >= 3 or insider_data.get('ceo_purchase'):
+                hunter_raw += 40
             scores[Lens.HUNTER] = LensScore(Lens.HUNTER, min(hunter_raw, 100), 1.0, details=insider_data)
             raw_sum += min(hunter_raw, 100)
             active_count += 1
