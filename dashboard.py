@@ -173,6 +173,16 @@ def fetch_system_status():
     except: pass
     return "IDLE"
 
+def fetch_latest_summary():
+    """Fetches the most recent scan summary logic."""
+    if not supabase: return None
+    try:
+        res = supabase.table('scan_summaries').select("*").order("date", desc=True).limit(1).execute()
+        if res.data:
+            return res.data[0]
+    except: pass
+    return None
+
 # --- 3. UI LAYOUT ---
 
 # Sidebar
@@ -185,6 +195,17 @@ if status == "RUNNING":
     st.sidebar.caption("Processing market data...")
 else:
     st.sidebar.markdown(f"### 🔴 {status}")
+
+# Scan Summary Widget
+latest_scan = fetch_latest_summary()
+if latest_scan:
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 📊 Last Scan")
+    st.sidebar.caption(f"Date: {latest_scan.get('date')}")
+    col_a, col_b = st.sidebar.columns(2)
+    col_a.metric("Scanned", latest_scan.get('scanned_count'))
+    col_b.metric("Saved", latest_scan.get('saved_count'))
+
 
 st.sidebar.markdown("---")
 if st.sidebar.button("🔄 REFRESH DATA"):

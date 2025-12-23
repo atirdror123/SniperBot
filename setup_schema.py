@@ -115,6 +115,15 @@ def get_schema_sql():
     -- Insert default
     INSERT INTO system_status (key, value) VALUES ('scan_status', 'IDLE')
     ON CONFLICT (key) DO NOTHING;
+
+    -- 4. Scan Summaries (Daily Log)
+    CREATE TABLE IF NOT EXISTS scan_summaries (
+        date DATE PRIMARY KEY DEFAULT CURRENT_DATE,
+        scanned_count INT DEFAULT 0,
+        candidates_count INT DEFAULT 0,
+        saved_count INT DEFAULT 0,
+        last_updated TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
     """
 
 def setup_database():

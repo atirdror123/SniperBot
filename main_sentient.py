@@ -220,6 +220,23 @@ class SentientSniperBot:
 
         # [LIMIT] Enforce Top 10 Logic (Pruning)
         self.enforce_strict_top_10()
+        
+        # [SUMMARY] Log Daily Stats
+        try:
+            today_str = datetime.now().strftime("%Y-%m-%d")
+            saved_res = self.supabase.table("sniper_signals").select("id", count="exact").gte("created_at", today_str).execute()
+            saved_count = saved_res.count if saved_res.count is not None else len(saved_res.data)
+            
+            summary_data = {
+                "date": today_str,
+                "scanned_count": deep_scan_count,
+                "candidates_count": len(candidates),
+                "saved_count": saved_count
+            }
+            self.supabase.table("scan_summaries").upsert(summary_data).execute()
+            print(f"[SUMMARY] Logged: Scanned {deep_scan_count}, Saved {saved_count}")
+        except Exception as e:
+            print(f"[ERROR] Failed to update summary: {e}")
 
         # [EMAIL] Notification
         if candidates:
