@@ -30,11 +30,13 @@ st.markdown("""
 # Auth & Clients
 @st.cache_resource
 def init_clients():
-    supabase_url = os.getenv("SUPABASE_URL")
-    supabase_key = os.getenv("SUPABASE_KEY")
+    # Try Env First, then Secrets
+    supabase_url = os.getenv("SUPABASE_URL") or st.secrets.get("SUPABASE_URL")
+    supabase_key = os.getenv("SUPABASE_KEY") or st.secrets.get("SUPABASE_KEY")
+    
     rep_supa = create_client(supabase_url, supabase_key) if supabase_url and supabase_key else None
     
-    genai_key = os.getenv("GOOGLE_API_KEY")
+    genai_key = os.getenv("GOOGLE_API_KEY") or st.secrets.get("GOOGLE_API_KEY")
     if genai_key:
         genai.configure(api_key=genai_key)
     
@@ -142,7 +144,8 @@ def get_ai_summary(ticker, signal_data_str):
     """
     Uses Gemini to generate a summary. Cached.
     """
-    if not os.getenv("GOOGLE_API_KEY"):
+    key = os.getenv("GOOGLE_API_KEY") or st.secrets.get("GOOGLE_API_KEY")
+    if not key:
         return "⚠️ Google API Key not found. Cannot generate AI summary."
     
     try:
