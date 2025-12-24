@@ -2,8 +2,10 @@ name: Daily Stock Scanner
 
 on:
   schedule:
-    # Run at 13:45 UTC daily (15 mins after US market open at 9:30 ET / 13:30 UTC)
-    - cron: '45 13 * * *'
+    # Run at 14:45 UTC daily (15 mins after US market open at 9:30 ET always covered)
+    # Winter: 9:45 EST (Market opens 9:30 EST)
+    # Summer: 10:45 EDT (Market opens 9:30 EDT)
+    - cron: '45 14 * * *'
   workflow_dispatch:
 
 jobs:
@@ -12,7 +14,7 @@ jobs:
     
     env:
       SUPABASE_URL: '${{ secrets.SUPABASE_URL }}'
-      SUPABASE_KEY: '${{ secrets.SUPABASEKEY }}'
+      SUPABASE_KEY: '${{ secrets.SUPABASE_KEY }}'
       FMP_API_KEY: '${{ secrets.FMP_API_KEY }}'
       GOOGLE_API_KEY: '${{ secrets.GOOGLE_API_KEY }}'
       DISCORD_WEBHOOK_URL: '${{ secrets.DISCORD_WEBHOOK_URL }}'
