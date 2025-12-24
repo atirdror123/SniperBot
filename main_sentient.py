@@ -199,9 +199,9 @@ class SentientSniperBot:
                         print(f"  [CANDIDATE] {ticker} | Score: {setup.final_score:.1f}")
                         candidates.append(setup)
                         
-                        # [REAL-TIME SAVE]
-                        # Immediate save to DB so Dashboard updates instantly
-                        self.save_setup(setup, safety)
+                        # [WAIT-AND-SAVE]
+                        # We collect all candidates first, then sort and save only the Top 10 at the end.
+                        # This ensures we don't spam the DB with 40+ stocks.
 
                 except Exception as e:
                     print(f"  [ERROR] {ticker}: {e}")
@@ -218,9 +218,21 @@ class SentientSniperBot:
 
 
 
-        # [LIMIT] Enforce Top 10 Logic (Pruning)
-        self.enforce_strict_top_10()
+        # [FILTER] STRICT TOP 10 LOGIC
+        # Sort all candidates by score (Highest first)
+        candidates.sort(key=lambda x: x.final_score, reverse=True)
         
+        # Keep strictly top 10
+        print(f"[SYSTEM] Found {len(candidates)} candidates. Filtering for Top 10...")
+        final_list = candidates[:10]
+        
+        # Save them now
+        for setup in final_list:
+            # Re-verify safety just in case (optional, but good practice)
+            self.save_setup(setup, setup.safety_check)
+
+        # Update candidates list for notification to only include what we actually saved
+        candidates = final_list
         # [SUMMARY] Log Daily Stats
         try:
             today_str = datetime.now().strftime("%Y-%m-%d")
@@ -301,39 +313,7 @@ class SentientSniperBot:
         
         print(f"  -> Saved {setup.ticker}")
 
-    def enforce_strict_top_10(self):
-        """
-        Ensures only the top 10 highest scoring stocks remain for the day.
-        Deletes the rest.
-        """
-        print("[SYSTEM] Enforcing Top 10 Limit...")
-        try:
-            today_start = datetime.now().strftime("%Y-%m-%d") + " 00:00:00"
-            
-            # Fetch all from today
-            res = self.supabase.table("sniper_signals") \
-                .select("id, ticker, confidence_score") \
-                .gte("created_at", today_start) \
-                .order("confidence_score", desc=True) \
-                .execute()
-                
-            signals = res.data
-            if len(signals) > 10:
-                # Keep Top 10
-                top_10 = signals[:10]
-                to_delete = signals[10:]
-                
-                print(f"  -> Found {len(signals)} signals. Keeping Top 10.")
-                
-                # Delete excess
-                for s in to_delete:
-                    self.supabase.table("sniper_signals").delete().eq("id", s['id']).execute()
-                    print(f"  -> Pruned {s['ticker']} (Score: {s['confidence_score']:.1f})")
-            else:
-                print("  -> Signal count within limit.")
-                
-        except Exception as e:
-            print(f"  [ERROR] Top 10 Enforcement Failed: {e}")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
