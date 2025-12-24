@@ -18,12 +18,61 @@ st.set_page_config(page_title="Sniper Terminal v2", page_icon="🎯", layout="wi
 # Theme
 st.markdown("""
 <style>
-    .stApp { background-color: #050505; color: #E0E0E0; font-family: 'Inter', sans-serif; }
-    h1, h2, h3 { color: #FFFFFF; font-family: 'Inter', sans-serif; font-weight: 600; }
-    [data-testid="stSidebar"] { background-color: #0a0a0a; border-right: 1px solid #1a1a1a; }
-    .metric-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); padding: 15px; border-radius: 10px; }
-    .stButton>button { border-radius: 20px; border: 1px solid #00FFFF; color: #00FFFF; background: transparent; }
-    .stButton>button:hover { background: rgba(0,255,255,0.1); }
+    /* MAIN BACKGROUND: Luxurious Deep Blue Gradient */
+    .stApp { 
+        background: linear-gradient(to bottom, #020C1B, #0A192F); 
+        color: #F0F6FC; 
+        font-family: 'Inter', sans-serif; 
+    }
+    
+    /* TYPOGRAPHY: Bright and Crisp */
+    h1, h2, h3, h4, h5, h6 { 
+        color: #FFFFFF !important; 
+        font-family: 'Inter', sans-serif; 
+        font-weight: 700; 
+        text-shadow: 0px 4px 12px rgba(0,0,0,0.5);
+    }
+    
+    p, li, div, span, label {
+        color: #E6F1FF; /* Bright White-Blue */
+    }
+    
+    /* SIDEBAR: Matching Deep Tone */
+    [data-testid="stSidebar"] { 
+        background-color: #001529; 
+        border-right: 1px solid #112240; 
+    }
+    
+    /* CARDS & METRICS */
+    .metric-card { 
+        background: rgba(17, 34, 64, 0.7); 
+        border: 1px solid #233554; 
+        padding: 15px; 
+        border-radius: 12px; 
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    }
+    
+    /* BUTTONS: Glowing Teal */
+    .stButton>button { 
+        border-radius: 8px; 
+        border: 1px solid #64FFDA; 
+        color: #64FFDA !important; 
+        background: rgba(100, 255, 218, 0.05); 
+        font-weight: 600;
+        letter-spacing: 0.5px;
+    }
+    .stButton>button:hover { 
+        background: rgba(100, 255, 218, 0.15); 
+        border-color: #64FFDA;
+        box-shadow: 0 0 15px rgba(100, 255, 218, 0.3);
+    }
+    
+    /* ALERTS & INFO BOXES */
+    .stAlert {
+        background-color: rgba(17, 34, 64, 0.9);
+        border: 1px solid #303C55;
+        color: #FFFFFF;
+    }
 </style>
 """, unsafe_allow_html=True)
 
