@@ -3,6 +3,7 @@ import requests
 import random
 from datetime import datetime, timedelta
 from typing import Dict, Any
+from discord_service import send_message
 
 class DataIngestor:
     """
@@ -41,6 +42,12 @@ class DataIngestor:
             
             if not rows:
                 print("[DATA] NASDAQ returned no rows. Trying Falback...")
+                
+                # NOTIFY USER via Discord
+                try:
+                    send_message("⚠️ **ALERT:** NASDAQ API blocked the request. Falling back to S&P 500 list.")
+                except: pass
+
                 # FALLBACK: S&P 500 from Wikipedia
                 try:
                     import pandas as pd

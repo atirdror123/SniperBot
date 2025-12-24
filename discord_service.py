@@ -56,3 +56,19 @@ def send_scan_report(signals):
             print(f"[DISCORD] Failed to send: {response.status_code} - {response.text}")
     except Exception as e:
         print(f"[DISCORD] Error sending webhook: {e}")
+
+def send_message(content, username="Sniper Alert"):
+    """
+    Sends a simple text message to Discord.
+    """
+    webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
+    if not webhook_url: return
+
+    payload = {
+        "username": username,
+        "content": content
+    }
+    
+    try:
+        requests.post(webhook_url, json=payload)
+    except: pass
