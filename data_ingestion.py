@@ -52,9 +52,24 @@ class DataIngestor:
                 try:
                     import pandas as pd
                     print("[DATA] Fetching S&P 500 fallback...")
-                    sp500 = pd.read_html('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies')[0]
-                    # Create mock rows structure
-                    rows = [{'symbol': x, 'lastsale': '$100.00', 'marketCap': '10000000000'} for x in sp500['Symbol'].tolist()]
+                    
+                    # 1. Fetch HTML with Headers (Avoid 403)
+                    wiki_url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
+                    wiki_headers = {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0 s_bot/1.0'
+                    }
+                    r = requests.get(wiki_url, headers=wiki_headers, timeout=15)
+                    
+                    if r.status_code == 200:
+                        # 2. Parse HTML
+                        dfs = pd.read_html(r.text)
+                        sp500 = dfs[0]
+                        # Create mock rows structure
+                        rows = [{'symbol': x, 'lastsale': '$100.00', 'marketCap': '10000000000'} for x in sp500['Symbol'].tolist()]
+                    else:
+                        print(f"[DATA] Wikipedia returned {r.status_code}")
+                        rows = []
+
                 except Exception as e:
                     print(f"[DATA] Fallback failed: {e}")
                     return []
