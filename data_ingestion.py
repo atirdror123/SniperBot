@@ -22,103 +22,141 @@ class DataIngestor:
 
     def fetch_universe(self, limit: int = 10000) -> list:
         """
-        Fetches the universe using NASDAQ API (Free).
-        Filters locally for Cap > 100M, Price > 2, Vol > 50k.
+        Fetches the universe matching criteria (Price > $2, Cap > $100M, Vol > 50k).
+        Priority:
+        1. FMP Stock Screener (Authorized API - Reliable)
+        2. NASDAQ API (Scraping - Unreliable)
+        3. Wikipedia S&P 500 (Fallback - Small)
         """
-        print("[DATA] Fetching Universe from NASDAQ API...")
+        rows = []
+        
+        # -----------------------------------------------
+        # 1. ATTEMPT FMP (Full Market, Reliable)
+        # -----------------------------------------------
+        if self.api_key:
+            print("[DATA] Fetching Universe from FMP Stock Screener...")
+            try:
+                # Direct filters in API to save bandwidth
+                url = f"{self.base_url}/stock-screener"
+                params = {
+                    "marketCapMoreThan": 100000000, # 100M
+                    "priceMoreThan": 2,
+                    "volumeMoreThan": 50000,
+                    "isEtf": "false",
+                    "limit": limit,
+                    "apikey": self.api_key
+                }
+                resp = requests.get(url, params=params, timeout=20)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if isinstance(data, list) and len(data) > 0:
+                        # FMP returns: [{'symbol': 'AAPL', 'price': 150, ...}, ...]
+                        print(f"[DATA] FMP returned {len(data)} tickers.")
+                        return [x.get('symbol') for x in data if x.get('symbol')]
+                else:
+                    print(f"[DATA] FMP Error: {resp.status_code}")
+            except Exception as e:
+                print(f"[DATA] FMP Fetch Error: {e}")
+        
+        # -----------------------------------------------
+        # 2. ATTEMPT NASDAQ (Scraping Fallback)
+        # -----------------------------------------------
+        print("[DATA] FMP failed or skipped. Trying NASDAQ API...")
         try:
-            # Use a higher limit to get the full list (or assume download=true ignores it, but safer to be explicit)
+            # Use a higher limit to get the full list
             url = "https://api.nasdaq.com/api/screener/stocks?tableonly=true&limit=25000&offset=0&download=true"
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0 s_bot/1.0'
             }
             resp = requests.get(url, headers=headers, timeout=30)
-            if resp.status_code != 200:
-                print(f"[DATA] NASDAQ API Failed: {resp.status_code}")
-                rows = [] # Trigger Fallback
-            else:
+            if resp.status_code == 200:
                 data = resp.json()
                 rows = data.get('data', {}).get('rows', [])
+            else:
+                print(f"[DATA] NASDAQ API Failed: {resp.status_code}")
+                rows = []
             
-            if not rows:
-                print("[DATA] NASDAQ returned no rows. Trying Falback...")
-                
-                # NOTIFY USER via Discord
-                try:
-                    send_message("⚠️ **ALERT:** NASDAQ API blocked the request. Falling back to S&P 500 list.")
-                except: pass
-
-                # FALLBACK: S&P 500 from Wikipedia
-                try:
-                    import pandas as pd
-                    print("[DATA] Fetching S&P 500 fallback...")
-                    
-                    # 1. Fetch HTML with Headers (Avoid 403)
-                    wiki_url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
-                    wiki_headers = {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0 s_bot/1.0'
-                    }
-                    r = requests.get(wiki_url, headers=wiki_headers, timeout=15)
-                    
-                    if r.status_code == 200:
-                        # 2. Parse HTML
-                        dfs = pd.read_html(r.text)
-                        sp500 = dfs[0]
-                        # Create mock rows structure
-                        rows = [{'symbol': x, 'lastsale': '$100.00', 'marketCap': '10000000000'} for x in sp500['Symbol'].tolist()]
-                    else:
-                        print(f"[DATA] Wikipedia returned {r.status_code}")
-                        rows = []
-
-                except Exception as e:
-                    print(f"[DATA] Fallback failed: {e}")
-                    return []
-                
-            print(f"[DATA] Processing {len(rows)} raw tickers...")
-            
-            filtered = []
-            count = 0
-            
-            for row in rows:
-                if count >= limit: break
-                
-                try:
-                    # 1. Parse Symbol
-                    symbol = row.get('symbol', '')
-                    if not symbol or not symbol.isalpha(): continue # Skip tickers with special chars
-                    
-                    # 2. Parse Price (remove '$' and ',')
-                    price_str = row.get('lastsale', '$0.00').replace('$', '').replace(',', '')
-                    try:
-                        price = float(price_str)
-                    except:
-                        price = 0
-                        
-                    # 3. Parse Market Cap
-                    cap_str = row.get('marketCap', '0').replace(',', '').replace('$', '')
-                    if not cap_str: cap_str = '0'
-                    try:
-                        # Handle 'B'/'M' suffixes if they exist? NASDAQ usually sends raw numbers or formatted strings
-                        # Detailed debug showed standard numbers e.g. "123456".
-                        # Just in case, try float direct
-                        cap = float(cap_str) 
-                    except:
-                        cap = 0
-                    
-                    if price < 2.0: continue
-                    if cap < 100_000_000: continue # 100M
-                    
-                    filtered.append(symbol)
-                    count += 1
-                except:
-                    continue
-                    
-            print(f"[DATA] NASDAQ Filtered Universe: {len(filtered)} stocks.")
-            return filtered
-
         except Exception as e:
             print(f"[DATA] NASDAQ Fetch Error: {e}")
-            return []
+            rows = []
+
+        # -----------------------------------------------
+        # 3. ATTEMPT WIKIPEDIA (Last Resort)
+        # -----------------------------------------------
+        if not rows:
+            print("[DATA] NASDAQ returned no rows. Trying Fallback...")
+            
+            # NOTIFY USER via Discord
+            try:
+                send_message("⚠️ **ALERT:** FMP & NASDAQ failed. Falling back to S&P 500 list.")
+            except: pass
+
+            # FALLBACK: S&P 500 from Wikipedia
+            try:
+                import pandas as pd
+                print("[DATA] Fetching S&P 500 fallback...")
+                
+                wiki_url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
+                wiki_headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0 s_bot/1.0'
+                }
+                r = requests.get(wiki_url, headers=wiki_headers, timeout=15)
+                
+                if r.status_code == 200:
+                    dfs = pd.read_html(r.text)
+                    sp500 = dfs[0]
+                    # Create mock rows structure
+                    rows = [{'symbol': x, 'lastsale': '$100.00', 'marketCap': '10000000000'} for x in sp500['Symbol'].tolist()]
+                else:
+                    print(f"[DATA] Wikipedia returned {r.status_code}")
+                    rows = []
+
+            except Exception as e:
+                print(f"[DATA] Fallback failed: {e}")
+                return []
+            
+        print(f"[DATA] Processing {len(rows)} raw tickers...")
+        
+        filtered = []
+        count = 0
+        
+        for row in rows:
+            if count >= limit: break
+            
+            try:
+                # 1. Parse Symbol
+                symbol = row.get('symbol', '')
+                if not symbol or not symbol.isalpha(): continue # Skip tickers with special chars
+                
+                # 2. Parse Price (remove '$' and ',')
+                price_str = row.get('lastsale', '$0.00').replace('$', '').replace(',', '')
+                try:
+                    price = float(price_str)
+                except:
+                    price = 0
+                    
+                # 3. Parse Market Cap
+                cap_str = row.get('marketCap', '0').replace(',', '').replace('$', '')
+                if not cap_str: cap_str = '0'
+                try:
+                    # Handle 'B'/'M' suffixes if they exist? NASDAQ usually sends raw numbers or formatted strings
+                    # Detailed debug showed standard numbers e.g. "123456".
+                    # Just in case, try float direct
+                    cap = float(cap_str) 
+                except:
+                    cap = 0
+                
+                if price < 2.0: continue
+                if cap < 100_000_000: continue # 100M
+                
+                filtered.append(symbol)
+                count += 1
+            except:
+                continue
+                
+        print(f"[DATA] Filtered Universe: {len(filtered)} stocks.")
+        return filtered
+
 
     def _get_json(self, endpoint: str, params: Dict = None):
         if not self.api_key: return None
