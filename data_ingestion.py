@@ -22,56 +22,35 @@ class DataIngestor:
 
     def fetch_universe(self, limit: int = 10000) -> list:
         """
-        Fetches the universe matching criteria (Price > $2, Cap > $100M, Vol > 50k).
+        Fetches the universe matching criteria (Price > $2, Cap > $100M).
         Priority:
-        1. FMP Stock Screener (Authorized API - Reliable)
-        2. NASDAQ API (Scraping - Unreliable)
-        3. Wikipedia S&P 500 (Fallback - Small)
+        1. NASDAQ API (with Stealth Headers) - Primary
+        2. Wikipedia S&P 500 (Fallback)
         """
         rows = []
-        
+
         # -----------------------------------------------
-        # 1. ATTEMPT FMP (Full Market, Reliable)
+        # 1. ATTEMPT NASDAQ (Primary - Full Market)
         # -----------------------------------------------
-        if self.api_key:
-            print("[DATA] Fetching Universe from FMP Stock Screener...")
-            try:
-                # Direct filters in API to save bandwidth
-                url = f"{self.base_url}/stock-screener"
-                params = {
-                    "marketCapMoreThan": 100000000, # 100M
-                    "priceMoreThan": 2,
-                    "volumeMoreThan": 50000,
-                    "isEtf": "false",
-                    "limit": limit,
-                    "apikey": self.api_key
-                }
-                resp = requests.get(url, params=params, timeout=20)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    if isinstance(data, list) and len(data) > 0:
-                        # FMP returns: [{'symbol': 'AAPL', 'price': 150, ...}, ...]
-                        print(f"[DATA] FMP returned {len(data)} tickers.")
-                        return [x.get('symbol') for x in data if x.get('symbol')]
-                else:
-                    print(f"[DATA] FMP Error: {resp.status_code}")
-            except Exception as e:
-                print(f"[DATA] FMP Fetch Error: {e}")
-        
-        # -----------------------------------------------
-        # 2. ATTEMPT NASDAQ (Scraping Fallback)
-        # -----------------------------------------------
-        print("[DATA] FMP failed or skipped. Trying NASDAQ API...")
+        print("[DATA] Fetching Universe from NASDAQ API...")
         try:
-            # Use a higher limit to get the full list
+            # Full list fetch
             url = "https://api.nasdaq.com/api/screener/stocks?tableonly=true&limit=25000&offset=0&download=true"
+            
+            # STEALTH HEADERS (Chrome 120)
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0 s_bot/1.0'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'application/json, text/plain, */*',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'Origin': 'https://www.nasdaq.com',
+                'Referer': 'https://www.nasdaq.com/'
             }
+            
             resp = requests.get(url, headers=headers, timeout=30)
             if resp.status_code == 200:
                 data = resp.json()
                 rows = data.get('data', {}).get('rows', [])
+                print(f"[DATA] NASDAQ Success. Found {len(rows)} raw tickers.")
             else:
                 print(f"[DATA] NASDAQ API Failed: {resp.status_code}")
                 rows = []
@@ -81,15 +60,18 @@ class DataIngestor:
             rows = []
 
         # -----------------------------------------------
-        # 3. ATTEMPT WIKIPEDIA (Last Resort)
+        # 2. ATTEMPT WIKIPEDIA (Last Resort)
         # -----------------------------------------------
         if not rows:
             print("[DATA] NASDAQ returned no rows. Trying Fallback...")
             
             # NOTIFY USER via Discord
             try:
-                send_message("⚠️ **ALERT:** FMP & NASDAQ failed. Falling back to S&P 500 list.")
-            except: pass
+                print("[DATA] Attempting to send Discord alert...")
+                send_message("⚠️ **ALERT:** NASDAQ & FMP failed. Falling back to S&P 500 list.")
+                print("[DATA] Discord alert sent.")
+            except Exception as e:
+                print(f"[DATA] Discord Alert Failed: {e}")
 
             # FALLBACK: S&P 500 from Wikipedia
             try:
@@ -100,7 +82,9 @@ class DataIngestor:
                 wiki_headers = {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0 s_bot/1.0'
                 }
+                print(f"[DATA] Requesting Wikipedia URL: {wiki_url}")
                 r = requests.get(wiki_url, headers=wiki_headers, timeout=15)
+                print(f"[DATA] Wikipedia Response Status: {r.status_code}")
                 
                 if r.status_code == 200:
                     dfs = pd.read_html(r.text)
