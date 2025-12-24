@@ -90,9 +90,14 @@ def check_password():
         # 1. Try Secret, 2. Fallback to Hardcoded
         correct_password = st.secrets.get("DASHBOARD_PASSWORD", "Atirdror2")
         
-        if st.session_state["password"] == correct_password:
+        # Safely get password from session state
+        entered_password = st.session_state.get("password", "")
+        
+        if entered_password == correct_password:
             st.session_state["password_correct"] = True
-            del st.session_state["password"]  # don't store password
+            # Optional: Delete only if it exists to clean up
+            if "password" in st.session_state:
+                del st.session_state["password"]
         else:
             st.session_state["password_correct"] = False
 
