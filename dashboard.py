@@ -18,60 +18,48 @@ st.set_page_config(page_title="Sniper Terminal v2", page_icon="🎯", layout="wi
 # Theme
 st.markdown("""
 <style>
-    /* MAIN BACKGROUND: Luxurious Deep Blue Gradient */
+    /* MAIN BACKGROUND: Bright Luxurious Blue */
     .stApp { 
-        background: linear-gradient(to bottom, #020C1B, #0A192F); 
-        color: #F0F6FC; 
+        background: linear-gradient(135deg, #1A2980 0%, #26D0CE 100%); 
+        color: #FFFFFF; 
         font-family: 'Inter', sans-serif; 
     }
     
-    /* TYPOGRAPHY: Bright and Crisp */
+    /* TYPOGRAPHY: Clean White */
     h1, h2, h3, h4, h5, h6 { 
         color: #FFFFFF !important; 
-        font-family: 'Inter', sans-serif; 
-        font-weight: 700; 
-        text-shadow: 0px 4px 12px rgba(0,0,0,0.5);
+        text-shadow: 0px 2px 4px rgba(0,0,0,0.2);
     }
     
-    p, li, div, span, label {
-        color: #E6F1FF; /* Bright White-Blue */
+    p, li, div, span, label, .stMetricValue {
+        color: #F0F2F6 !important;
     }
     
-    /* SIDEBAR: Matching Deep Tone */
+    /* SIDEBAR: Sem-Transparent Glassy */
     [data-testid="stSidebar"] { 
-        background-color: #001529; 
-        border-right: 1px solid #112240; 
+        background-color: rgba(255, 255, 255, 0.1); 
+        backdrop-filter: blur(10px);
+        border-right: 1px solid rgba(255, 255, 255, 0.2); 
     }
     
-    /* CARDS & METRICS */
+    /* CARDS: Glassmorphism */
     .metric-card { 
-        background: rgba(17, 34, 64, 0.7); 
-        border: 1px solid #233554; 
+        background: rgba(255, 255, 255, 0.15); 
+        border: 1px solid rgba(255, 255, 255, 0.3); 
         padding: 15px; 
         border-radius: 12px; 
-        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
     }
     
-    /* BUTTONS: Glowing Teal */
+    /* BUTTONS: White/Blue */
     .stButton>button { 
         border-radius: 8px; 
-        border: 1px solid #64FFDA; 
-        color: #64FFDA !important; 
-        background: rgba(100, 255, 218, 0.05); 
-        font-weight: 600;
-        letter-spacing: 0.5px;
+        border: 1px solid #FFFFFF; 
+        color: #FFFFFF !important; 
+        background: rgba(255, 255, 255, 0.1); 
     }
     .stButton>button:hover { 
-        background: rgba(100, 255, 218, 0.15); 
-        border-color: #64FFDA;
-        box-shadow: 0 0 15px rgba(100, 255, 218, 0.3);
-    }
-    
-    /* ALERTS & INFO BOXES */
-    .stAlert {
-        background-color: rgba(17, 34, 64, 0.9);
-        border: 1px solid #303C55;
-        color: #FFFFFF;
+        background: rgba(255, 255, 255, 0.3); 
     }
 </style>
 """, unsafe_allow_html=True)
@@ -244,16 +232,6 @@ if status == "RUNNING":
     st.sidebar.caption("Processing market data...")
 else:
     st.sidebar.markdown(f"### 🔴 {status}")
-
-# Scan Summary Widget
-latest_scan = fetch_latest_summary()
-if latest_scan:
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### 📊 Last Scan")
-    st.sidebar.caption(f"Date: {latest_scan.get('date')}")
-    col_a, col_b = st.sidebar.columns(2)
-    col_a.metric("Scanned", latest_scan.get('scanned_count'))
-    col_b.metric("Saved", latest_scan.get('saved_count'))
 
 
 st.sidebar.markdown("---")
