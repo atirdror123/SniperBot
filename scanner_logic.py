@@ -102,6 +102,10 @@ class SniperScorer:
             raw_features['sma50'] = sma50
             raw_features['sma200'] = sma200
             
+            # [HARD FILTER] Price must be above SMA200 (Long Term Trend)
+            if current_price < sma200:
+                 return {'ticker': ticker, 'final_score': 0, 'details': f"Price Below SMA200 (Bear Trend)", 'raw_features': raw_features}
+            
             if sma20 > sma50 > sma200:
                 s_trend += 60
                 details.append("MA Stack (20>50>200): +Trend")
@@ -299,7 +303,7 @@ class SniperScorer:
             final_score = int(max(0, min(100, final_score)))
             
             # AI Check (Only if score high)
-            if self.ai_enabled and final_score >= 75 and not is_backtest:
+            if self.ai_enabled and final_score >= 80 and not is_backtest:
                 # ... (Existing AI Logic call) ...
                 # Use sub-scores score as base
                 try:
