@@ -19,10 +19,10 @@ class SniperScorer:
         url = os.getenv("SUPABASE_URL")
         key = os.getenv("SUPABASE_KEY")
         self.weights = {
-            'w_trend': 0.30, 
-            'w_volatility': 0.20, 
-            'w_fundamental': 0.20, 
-            'w_sentiment': 0.30
+            'w_trend': 0.40, 
+            'w_volatility': 0.30, 
+            'w_fundamental': 0.15, 
+            'w_sentiment': 0.15
         }
         
         if url and key:
@@ -31,10 +31,10 @@ class SniperScorer:
                 response = supabase.table('bot_config').select('*').eq('config_key', 'global_strategy').execute()
                 if response.data:
                     config = response.data[0]
-                    self.weights['w_trend'] = config.get('w_trend', 0.30)
-                    self.weights['w_volatility'] = config.get('w_volatility', 0.20)
-                    self.weights['w_fundamental'] = config.get('w_fundamental', 0.20)
-                    self.weights['w_sentiment'] = config.get('w_sentiment', 0.30)
+                    self.weights['w_trend'] = config.get('w_trend', 0.40)
+                    self.weights['w_volatility'] = config.get('w_volatility', 0.30)
+                    self.weights['w_fundamental'] = config.get('w_fundamental', 0.15)
+                    self.weights['w_sentiment'] = config.get('w_sentiment', 0.15)
                     print(f"Loaded Dynamic Weights: {self.weights}")
             except Exception as e:
                 print(f"Warning: Failed to load bot_config, using defaults. ({e})")
