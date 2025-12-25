@@ -64,39 +64,37 @@ class DataIngestor:
         # -----------------------------------------------
         if not rows:
             print("[DATA] NASDAQ Scraping failed. Trying GitHub Raw Ticker List...")
-            try:
-                # Source: widely used static list or similar.
-                # Using a known reliable raw CSV or JSON from a repo. 
-                # Example: https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/nasdaq/nasdaq_full_tickers.json
-                # Or just generic list. Let's use a very simple one that is maintained:
-                # https://raw.githubusercontent.com/djaiss/maps_of_burdens/master/ticker_list.json (maybe old)
-                # Better: https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/all/all_tickers.json
+                # Verified Source: rreichel3/US-Stock-Symbols (Updated Nightly)
+                urls = [
+                    "https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/nasdaq/nasdaq_tickers.json",
+                    "https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/nyse/nyse_tickers.json"
+                ]
                 
-                # Let's use a specific one we construct or find. 
-                # Actually, best is to try another NASDAQ URL or just use S&P 500?
-                # User hates S&P 500.
+                for u in urls:
+                    try:
+                        resp = requests.get(u, timeout=10)
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            # Data is list of dicts: [{'symbol': 'AAPL', ...}, ...]
+                            for item in data:
+                                sym = item.get('symbol')
+                                if sym:
+                                    # Basic cleaning
+                                    sym = sym.strip().upper()
+                                    # Filter weird chars standard in some lists
+                                    if "^" not in sym: 
+                                        rows.append(sym)
+                            print(f"[DATA] Fetched {len(data)} from {u.split('/')[-1]}")
+                    except Exception as e:
+                        print(f"[DATA] Error fetching {u}: {e}")
                 
-                # Let's try downloading the header-less CSV from NASDAQ? No, blocked.
+                # Deduplicate
+                rows = list(set(rows))
+                print(f"[DATA] GitHub Fallback Total: {len(rows)} unique tickers.")
                 
-                # S&P 500 is 500 stocks.
-                # Russel 3000? 
-                # Let's try to fetch a static backup list from my own Repo? No.
-                
-                # Let's use `yfinance` to get tickers? No, yf doesn't list all.
-                
-                # OK, strategy: Fallback to FMP 'sp500_constituent' AND 'nasdaq_constituent'?
-                # If 'stock-screener' is blocked, maybe 'indices' works?
-                
-                # Let's try specific GitHub Raw list:
-                gh_url = "https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/all/all_tickers.json" 
-                # Note: Verify this URL in a separate step? It's risky to guess.
-                
-                # Safer: Hardcode a "Survivor" list? No.
-                
-                # Let's stick to the plan: Fallback to S&P 500 is better than crash.
-                # BUT, I will add a `try/finally` in main loop to save results.
-                pass
-            except: pass
+                if rows:
+                    return rows # Return immediately if successful
+
         if not rows:
             print("[DATA] NASDAQ returned no rows. Trying Fallback...")
             
