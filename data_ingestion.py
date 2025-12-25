@@ -169,27 +169,31 @@ class DataIngestor:
             if count >= limit: break
             
             try:
-                # 1. Parse Symbol
-                symbol = row.get('symbol', '')
-                if not symbol or not symbol.isalpha(): continue # Skip tickers with special chars
-                
-                # 2. Parse Price (remove '$' and ',')
-                price_str = row.get('lastsale', '$0.00').replace('$', '').replace(',', '')
-                try:
-                    price = float(price_str)
-                except:
-                    price = 0
+                # [POLYMORPHSM] Handle both String (New Source) and Dict (Old Source)
+                if isinstance(row, str):
+                    symbol = row
+                    price = 100.0 # Dummy, let main loop filter
+                    cap = 1000000000 # Dummy, let main loop filter
+                else:
+                    # 1. Parse Symbol
+                    symbol = row.get('symbol', '')
                     
-                # 3. Parse Market Cap
-                cap_str = row.get('marketCap', '0').replace(',', '').replace('$', '')
-                if not cap_str: cap_str = '0'
-                try:
-                    # Handle 'B'/'M' suffixes if they exist? NASDAQ usually sends raw numbers or formatted strings
-                    # Detailed debug showed standard numbers e.g. "123456".
-                    # Just in case, try float direct
-                    cap = float(cap_str) 
-                except:
-                    cap = 0
+                    # 2. Parse Price (remove '$' and ',')
+                    price_str = row.get('lastsale', '$0.00').replace('$', '').replace(',', '')
+                    try:
+                        price = float(price_str)
+                    except:
+                        price = 0
+                        
+                    # 3. Parse Market Cap
+                    cap_str = row.get('marketCap', '0').replace(',', '').replace('$', '')
+                    if not cap_str: cap_str = '0'
+                    try:
+                        cap = float(cap_str) 
+                    except:
+                        cap = 0
+                
+                if not symbol or not symbol.isalpha(): continue
                 
                 if price < 2.0: continue
                 if cap < 100_000_000: continue # 100M

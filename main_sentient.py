@@ -104,8 +104,8 @@ class SentientSniperBot:
                     "date": datetime.now().strftime("%Y-%m-%d"),
                     "scanned_count": 0,
                     "candidates_count": 0,
-                    "saved_count": 0,
-                    "note": "FAILED: Universe fetch returned 0 stocks."
+                    "saved_count": 0
+                    # Note column doesn't exist, so we omit strict details. Check system_status for details.
                 }).execute()
                 return
 
