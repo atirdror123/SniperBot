@@ -30,33 +30,61 @@ class DataIngestor:
         rows = []
 
         # -----------------------------------------------
-        # 1. ATTEMPT NASDAQ (Primary - Full Market)
+        # 1. ATTEMPT NASDAQ TRADER OFFICIAL FILE (Primary - Robust)
         # -----------------------------------------------
-        print("[DATA] Fetching Universe from NASDAQ API...")
+        print("[DATA] Fetching Universe from NASDAQ Trader Official Source...")
         try:
-            # Full list fetch
-            url = "https://api.nasdaq.com/api/screener/stocks?tableonly=true&limit=25000&offset=0&download=true"
+            # This is the official file used by trading terminals
+            url = "http://www.nasdaqtrader.com/dynamic/SymDir/nasdaqtraded.txt"
+            headers = {'User-Agent': 'Mozilla/5.0'} # Simple UA usually enough for static file
             
-            # STEALTH HEADERS (Chrome 120)
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'application/json, text/plain, */*',
-                'Accept-Language': 'en-US,en;q=0.9',
-                'Origin': 'https://www.nasdaq.com',
-                'Referer': 'https://www.nasdaq.com/'
-            }
-            
-            resp = requests.get(url, headers=headers, timeout=30)
+            resp = requests.get(url, headers=headers, timeout=45)
             if resp.status_code == 200:
-                data = resp.json()
-                rows = data.get('data', {}).get('rows', [])
-                print(f"[DATA] NASDAQ Success. Found {len(rows)} raw tickers.")
+                print(f"[DATA] Downloaded {len(resp.content)} bytes from NASDAQ Trader.")
+                
+                # Parse Pipe-Delimited text
+                content = resp.text
+                lines = content.splitlines()
+                # Skip Header (Symbol|Security Name|...) and Trailer (File Creation Time...)
+                # Heuristic: Valid lines have pipes.
+                
+                for line in lines[1:-1]: # Skip first and last usually
+                    parts = line.split('|')
+                    if len(parts) > 2:
+                        sym = parts[1] # Symbol is usually 2nd column? 
+                        # Wait, let's verify column order. 
+                        # Header: "Nasdaq Traded|Symbol|Security Name|Listing Exchange|Market Category|ETF|Round Lot Size|Test Issue|Financial Status|CQS Symbol|NASDAQ Symbol|NextShares"
+                        # Sample: "Y|A|Agilent Technologies...|N|Q|N|100|N|N||A|N"
+                        # So Symbol is index 1.
+                        
+                        test_issue = parts[7] if len(parts) > 7 else 'N'
+                        
+                        if test_issue == 'N':
+                            # Basic cleaning
+                            sym = sym.strip().upper()
+                            # Exclude weird ones
+                            if sym.isalpha():
+                                rows.append(sym)
+                                
+                # Also fetch 'otherlisted.txt' for NYSE/AMEX? 
+                # 'nasdaqtraded.txt' includes ALL stocks traded on NASDAQ, which includes NYSE usually?
+                # Actually, 'nasdaqtraded.txt' contains securities TRADED on Nasdaq, not just listed.
+                # So it implies full coverage.
+                
+                # If we want to be sure, we can also check 'otherlisted.txt'
+                # But let's start with this.
+                
+                print(f"[DATA] NASDAQ Trader Success. Found {len(rows)} valid tickers.")
+                
+                # Deduplicate just in case
+                rows = list(set(rows))
+                
             else:
-                print(f"[DATA] NASDAQ API Failed: {resp.status_code}")
+                print(f"[DATA] NASDAQ Trader Failed: {resp.status_code}")
                 rows = []
             
         except Exception as e:
-            print(f"[DATA] NASDAQ Fetch Error: {e}")
+            print(f"[DATA] NASDAQ Trader Error: {e}")
             rows = []
 
         # -----------------------------------------------
