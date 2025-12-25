@@ -92,36 +92,36 @@ class DataIngestor:
         # -----------------------------------------------
         if not rows:
             print("[DATA] NASDAQ Scraping failed. Trying GitHub Raw Ticker List...")
-                # Verified Source: rreichel3/US-Stock-Symbols (Updated Nightly)
-                urls = [
-                    "https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/nasdaq/nasdaq_tickers.json",
-                    "https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/nyse/nyse_tickers.json"
-                ]
-                
-                for u in urls:
-                    try:
-                        resp = requests.get(u, timeout=10)
-                        if resp.status_code == 200:
-                            data = resp.json()
-                            # Data is list of dicts: [{'symbol': 'AAPL', ...}, ...]
-                            for item in data:
-                                sym = item.get('symbol')
-                                if sym:
-                                    # Basic cleaning
-                                    sym = sym.strip().upper()
-                                    # Filter weird chars standard in some lists
-                                    if "^" not in sym: 
-                                        rows.append(sym)
-                            print(f"[DATA] Fetched {len(data)} from {u.split('/')[-1]}")
-                    except Exception as e:
-                        print(f"[DATA] Error fetching {u}: {e}")
-                
-                # Deduplicate
-                rows = list(set(rows))
-                print(f"[DATA] GitHub Fallback Total: {len(rows)} unique tickers.")
-                
-                if rows:
-                    return rows # Return immediately if successful
+            # Verified Source: rreichel3/US-Stock-Symbols (Updated Nightly)
+            urls = [
+                "https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/nasdaq/nasdaq_tickers.json",
+                "https://raw.githubusercontent.com/rreichel3/US-Stock-Symbols/main/nyse/nyse_tickers.json"
+            ]
+            
+            for u in urls:
+                try:
+                    resp = requests.get(u, timeout=10)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        # Data is list of dicts: [{'symbol': 'AAPL', ...}, ...]
+                        for item in data:
+                            sym = item.get('symbol')
+                            if sym:
+                                # Basic cleaning
+                                sym = sym.strip().upper()
+                                # Filter weird chars standard in some lists
+                                if "^" not in sym: 
+                                    rows.append(sym)
+                        print(f"[DATA] Fetched {len(data)} from {u.split('/')[-1]}")
+                except Exception as e:
+                    print(f"[DATA] Error fetching {u}: {e}")
+            
+            # Deduplicate
+            rows = list(set(rows))
+            print(f"[DATA] GitHub Fallback Total: {len(rows)} unique tickers.")
+            
+            if rows:
+                return rows # Return immediately if successful
 
         if not rows:
             print("[DATA] NASDAQ returned no rows. Trying Fallback...")
