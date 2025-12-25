@@ -218,51 +218,62 @@ class SentientSniperBot:
 
 
 
-        # [FILTER] STRICT TOP 10 LOGIC
-        # Sort all candidates by score (Highest first)
-        candidates.sort(key=lambda x: x.final_score, reverse=True)
-        
-        # Keep strictly top 10
-        print(f"[SYSTEM] Found {len(candidates)} candidates. Filtering for Top 10...")
-        final_list = candidates[:10]
-        
-        # Save them now
-        for setup in final_list:
-            # Re-verify safety just in case (optional, but good practice)
-            self.save_setup(setup, setup.safety_check)
+                
+                # Let's verify where the loop starts. 
+                # Line 118: for i in range(0, len(universe), batch_size):
+                
+                # I will wrap the loop. 
+                pass
 
-        # Update candidates list for notification to only include what we actually saved
-        candidates = final_list
-        # [SUMMARY] Log Daily Stats
-        try:
-            today_str = datetime.now().strftime("%Y-%m-%d")
-            saved_res = self.supabase.table("sniper_signals").select("id", count="exact").gte("created_at", today_str).execute()
-            saved_count = saved_res.count if saved_res.count is not None else len(saved_res.data)
-            
-            summary_data = {
-                "date": today_str,
-                "scanned_count": deep_scan_count,
-                "candidates_count": len(candidates),
-                "saved_count": saved_count
-            }
-            self.supabase.table("scan_summaries").upsert(summary_data).execute()
-            print(f"[SUMMARY] Logged: Scanned {deep_scan_count}, Saved {saved_count}")
+        except KeyboardInterrupt:
+            print("\n[SYSTEM] Interrupted by User. Saving progress...")
         except Exception as e:
-            print(f"[ERROR] Failed to update summary: {e}")
-
-        # [EMAIL] Notification
-        if candidates:
-            # Re-fetch candidates from DB to ensure we send only the survivors
-            # For simplicity, we just send what we found, but the DB is clean.
-            print(f"[NOTIFY] Sending alerts for {len(candidates)} signals...")
+            print(f"\n[CRITICAL ERROR] Main Loop Crashed: {e}")
+        finally:
+            print("\n[Shutting Down] Saving results found so far...")
             
-            # 1. Email (Optional)
-            # send_daily_recap(candidates)
+            # [FILTER] STRICT TOP 10 LOGIC
+            # Sort all candidates by score (Highest first)
+            candidates.sort(key=lambda x: x.final_score, reverse=True)
+            
+            # Keep strictly top 10
+            print(f"[SYSTEM] Found {len(candidates)} candidates. Filtering for Top 10...")
+            final_list = candidates[:10]
+            
+            # Save them now
+            for setup in final_list:
+                # Re-verify safety just in case (optional, but good practice)
+                self.save_setup(setup, setup.safety_check)
 
-            # 2. Discord (Preferred)
-            send_scan_report(candidates)
+            # Update candidates list for notification to only include what we actually saved
+            candidates = final_list
 
-        print("[SYSTEM] Cycle Complete.")
+            # [SUMMARY] Log Daily Stats
+            try:
+                today_str = datetime.now().strftime("%Y-%m-%d")
+                saved_res = self.supabase.table("sniper_signals").select("id", count="exact").gte("created_at", today_str).execute()
+                saved_count = saved_res.count if saved_res.count is not None else len(saved_res.data)
+                
+                summary_data = {
+                    "date": today_str,
+                    "scanned_count": deep_scan_count,
+                    "candidates_count": len(candidates),
+                    "saved_count": saved_count
+                }
+                self.supabase.table("scan_summaries").upsert(summary_data).execute()
+                print(f"[SUMMARY] Logged: Scanned {deep_scan_count}, Saved {saved_count}")
+            except Exception as e:
+                print(f"[ERROR] Failed to update summary: {e}")
+
+            # [EMAIL] Notification
+            if candidates:
+                print(f"[NOTIFY] Sending alerts for {len(candidates)} signals...")
+                try:
+                    send_scan_report(candidates)
+                except Exception as e:
+                    print(f"Notify failed: {e}")
+
+            print("[SYSTEM] Cycle Complete.")
 
     def save_setup(self, setup: StockSetup, safety: SafetyStatus):
         """
