@@ -112,10 +112,15 @@ class SentientSniperBot:
             self.supabase.table("system_status").upsert({"key": "scan_status", "value": "SCANNING"}).execute()
 
             # B. Batch Processing
-            BATCH_SIZE = 100
+            BATCH_SIZE = 50 # Reduced to 50 for stability
+            
             import yfinance as yf
             import time
             import pandas as pd
+            from network_utils import get_retry_session
+
+            # Create ONE Robust Session for the whole cycle
+            session = get_retry_session()
             
             total_processed = 0
             
@@ -123,11 +128,25 @@ class SentientSniperBot:
                 batch = universe[i:i+BATCH_SIZE]
                 print(f"\n[BATCH] Processing {i} to {i+len(batch)}...")
                 
+                # Sleep to respect rate limits (FMP/YF)
+                time.sleep(1.5)
+                
                 # C. Fast Technical Filter (YF Batch - Free/Cheap)
                 survivors = []
                 try:
-                    # Download batch data efficiently
-                    data = yf.download(batch, period="1y", interval="1d", group_by='ticker', progress=False, threads=True, auto_adjust=True)
+                    # Download batch data efficiently using Clean Session
+                    # Note: yfinance < 0.2.x might ignore session, but we try.
+                    # Current yfinance uses requests cache if installed, or session if provided.
+                    data = yf.download(
+                        batch, 
+                        period="1y", 
+                        interval="1d", 
+                        group_by='ticker', 
+                        progress=False, 
+                        threads=True, 
+                        auto_adjust=True,
+                        session=session # Inject Robust Session
+                    )
                     
                     for ticker in batch:
                         try:
@@ -164,6 +183,8 @@ class SentientSniperBot:
                             continue
                 except Exception as e:
                     print(f"  [BATCH ERROR] YF Download failed: {e}")
+                    # If YF fails, we might want to wait longer?
+                    time.sleep(5)
                     continue
                 
                 print(f"  -> Survivors (Trend Positive): {len(survivors)}/{len(batch)}")

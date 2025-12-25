@@ -4,6 +4,7 @@ import random
 from datetime import datetime, timedelta
 from typing import Dict, Any
 from discord_service import send_message
+from network_utils import get_retry_session
 
 class DataIngestor:
     """
@@ -34,11 +35,12 @@ class DataIngestor:
         # -----------------------------------------------
         print("[DATA] Fetching Universe from NASDAQ Trader Official Source...")
         try:
-            # This is the official file used by trading terminals
+            # Full list fetch
             url = "http://www.nasdaqtrader.com/dynamic/SymDir/nasdaqtraded.txt"
-            headers = {'User-Agent': 'Mozilla/5.0'} # Simple UA usually enough for static file
+            session = get_retry_session()
+            # Session already has User-Agent
             
-            resp = requests.get(url, headers=headers, timeout=45)
+            resp = session.get(url, timeout=45)
             if resp.status_code == 200:
                 print(f"[DATA] Downloaded {len(resp.content)} bytes from NASDAQ Trader.")
                 
@@ -100,7 +102,7 @@ class DataIngestor:
             
             for u in urls:
                 try:
-                    resp = requests.get(u, timeout=10)
+                    resp = session.get(u, timeout=10)
                     if resp.status_code == 200:
                         data = resp.json()
                         # Data is list of dicts: [{'symbol': 'AAPL', ...}, ...]
