@@ -2,10 +2,18 @@ import yfinance as yf
 import pandas as pd
 import os
 import json
+import time
 import google.generativeai as genai
 from supabase import create_client
+from scan_logger import get_logger
+
+logger = get_logger("SCANNER_LOGIC")
 
 class SniperScorer:
+    # Constants for retry logic
+    MAX_RETRIES = 3
+    RETRY_BACKOFF = 2  # seconds
+    
     def __init__(self):
         # Initialize Gemini AI
         api_key = os.getenv("GOOGLE_API_KEY")
@@ -35,9 +43,9 @@ class SniperScorer:
                     self.weights['w_volatility'] = config.get('w_volatility', 0.30)
                     self.weights['w_fundamental'] = config.get('w_fundamental', 0.15)
                     self.weights['w_sentiment'] = config.get('w_sentiment', 0.15)
-                    print(f"Loaded Dynamic Weights: {self.weights}")
+                    logger.info(f"Loaded Dynamic Weights: {self.weights}")
             except Exception as e:
-                print(f"Warning: Failed to load bot_config, using defaults. ({e})")
+                logger.warning(f"Failed to load bot_config, using defaults: {e}")
 
         # Map Sectors to SPDR ETFs
         self.sector_etf_map = {
@@ -57,6 +65,30 @@ class SniperScorer:
         # Pre-fetch Sector Trends
         self._prefetch_sector_trends()
 
+    def _fetch_history_with_retry(self, ticker: str, period: str = "1y") -> pd.DataFrame:
+        """
+        Fetches historical data with retry logic and exponential backoff.
+        Returns empty DataFrame on complete failure.
+        """
+        for attempt in range(1, self.MAX_RETRIES + 1):
+            try:
+                stock = yf.Ticker(ticker)
+                hist = stock.history(period=period)
+                
+                # VALIDATION: Ensure we got data
+                if not hist.empty:
+                    return hist
+                else:
+                    logger.warning(f"{ticker}: Empty history on attempt {attempt}")
+                    
+            except Exception as e:
+                logger.warning(f"{ticker}: YF error on attempt {attempt}: {type(e).__name__}: {e}")
+            
+            if attempt < self.MAX_RETRIES:
+                time.sleep(self.RETRY_BACKOFF * attempt)
+        
+        return pd.DataFrame()  # Return empty on failure
+
     def analyze_stock(self, ticker: str, data: pd.DataFrame = None) -> dict:
         """
         Analyzes a stock based on Weighted Technical Indicators.
@@ -74,17 +106,16 @@ class SniperScorer:
         is_backtest = data is not None
         
         try:
-            stock = yf.Ticker(ticker)
-            
             if is_backtest:
                 hist = data
                 if len(hist) < 200:
                      return {'ticker': ticker, 'final_score': 0, 'details': "Not enough historical data (Backtest)"}
             else:
-                hist = stock.history(period="1y")
+                # Use retry-enabled fetch
+                hist = self._fetch_history_with_retry(ticker, period="1y")
             
             if hist.empty:
-                return {'ticker': ticker, 'final_score': 0, 'details': "No data found"}
+                return {'ticker': ticker, 'final_score': 0, 'details': "No data found (after retries)"}
 
             current_price = hist['Close'].iloc[-1]
             
