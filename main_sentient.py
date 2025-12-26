@@ -373,11 +373,29 @@ class SentientSniperBot:
 
 
 if __name__ == "__main__":
+    # ============================================================
+    # LAYER 0: CHRONO-GUARD (Pre-Flight Market Status Check)
+    # This runs FIRST, before any heavy imports or DB connections.
+    # ============================================================
+    from chrono_guard import ChronoGuard
+    from dotenv import load_dotenv
+    
+    load_dotenv()  # Load env BEFORE heavy imports
+    
     parser = argparse.ArgumentParser()
     parser.add_argument("--reset", action="store_true", help="Wipe all memory before running")
     parser.add_argument("--test", action="store_true", help="Run a small test batch (50 stocks)")
+    parser.add_argument("--research-mode", action="store_true", help="Bypass trading hours check (for research/backtesting)")
     args = parser.parse_args()
     
+    # Run Chrono-Guard check BEFORE initializing the bot
+    guard = ChronoGuard(research_mode=args.research_mode)
+    if not guard.check_and_gate():
+        logger.info("Chrono-Guard: Market closed. Exiting gracefully (code 0).")
+        import sys
+        sys.exit(0)
+    
+    # Chrono-Guard passed - proceed with normal initialization
     bot = SentientSniperBot()
     bot.test_mode = args.test
     
@@ -385,3 +403,4 @@ if __name__ == "__main__":
         bot.reset_system()
     
     bot.run_daily_cycle()
+
