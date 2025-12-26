@@ -134,9 +134,8 @@ class SentientSniperBot:
                 # C. Fast Technical Filter (YF Batch - Free/Cheap)
                 survivors = []
                 try:
-                    # Download batch data efficiently using Clean Session
-                    # Note: yfinance < 0.2.x might ignore session, but we try.
-                    # Current yfinance uses requests cache if installed, or session if provided.
+                    # Download batch data efficiently
+                    # Reverted: Do NOT inject session into yf, it breaks curl_cffi.
                     data = yf.download(
                         batch, 
                         period="1y", 
@@ -144,8 +143,7 @@ class SentientSniperBot:
                         group_by='ticker', 
                         progress=False, 
                         threads=True, 
-                        auto_adjust=True,
-                        session=session # Inject Robust Session
+                        auto_adjust=True
                     )
                     
                     for ticker in batch:
