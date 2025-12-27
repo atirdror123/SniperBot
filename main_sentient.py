@@ -1,9 +1,14 @@
 import os
 import argparse
 import time
+import logging
 from datetime import datetime
 from dotenv import load_dotenv
 from supabase import create_client
+
+# Suppress YFinance HTTP 404 error spam for ETFs/non-stocks
+logging.getLogger("yfinance").setLevel(logging.CRITICAL)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 from primitives import MarketRegime, SafetyStatus, StockSetup, Lens
 from iron_dome import IronDome

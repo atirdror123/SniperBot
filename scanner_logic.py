@@ -3,9 +3,14 @@ import pandas as pd
 import os
 import json
 import time
+import logging
 import google.generativeai as genai
 from supabase import create_client
 from scan_logger import get_logger
+
+# Suppress YFinance HTTP 404 error spam for ETFs/non-stocks
+logging.getLogger("yfinance").setLevel(logging.CRITICAL)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 logger = get_logger("SCANNER_LOGIC")
 

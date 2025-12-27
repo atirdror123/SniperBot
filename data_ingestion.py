@@ -1,11 +1,17 @@
 import os
 import requests
 import time
+import logging
 from datetime import datetime, timedelta
 from typing import Dict, Any, List
 from discord_service import send_message
 from network_utils import get_retry_session
 from scan_logger import get_logger
+
+# Suppress YFinance HTTP 404 error spam for ETFs/non-stocks
+# These are expected and handled gracefully - no need to log them
+logging.getLogger("yfinance").setLevel(logging.CRITICAL)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 logger = get_logger("DATA_INGESTION")
 
