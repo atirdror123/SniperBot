@@ -290,9 +290,10 @@ class SentientSniperBot:
             saved_count = 0
             for setup in final_list:
                 try:
-                    self.save_setup(setup, setup.safety_check)
+                    self.save_setup(setup)
                     saved_count += 1
-                except: pass
+                except Exception as e:
+                    logger.error(f"Failed to save {setup.ticker}: {e}")
 
             # Update candidates list for notification to only include what we actually saved
             candidates = final_list
@@ -326,9 +327,9 @@ class SentientSniperBot:
 
             print("[SYSTEM] Cycle Complete.")
 
-    def save_setup(self, setup: StockSetup, safety: SafetyStatus):
+    def save_setup(self, setup: StockSetup):
         """
-        Saves to 'sniper_signals' and 'sentient_memory'.
+        Saves to 'sniper_signals' table.
         """
         # 1. Save to Signal Table (for Dashboard)
         signal_data = {
@@ -360,20 +361,24 @@ class SentientSniperBot:
 
         self.supabase.table("sniper_signals").insert(signal_data).execute()
         
-        # 2. Save to Sentient Memory (for Training)
-        memory_data = {
-            "ticker": setup.ticker,
-            "score_quant": setup.lens_scores[Lens.QUANT].score,
-            "score_oracle": setup.lens_scores[Lens.ORACLE].score,
-            "score_hunter": setup.lens_scores[Lens.HUNTER].score,
-            "score_chartist": setup.lens_scores[Lens.CHARTIST].score,
-            "final_score": setup.final_score,
-            "regime_at_entry": setup.regime.name,
-            "outcome_label": "PENDING"
-        }
-        self.supabase.table("sentient_memory").insert(memory_data).execute()
+        # 2. Save to Sentient Memory (Optional - for Training)
+        # Note: Table may not exist in all environments
+        try:
+            memory_data = {
+                "ticker": setup.ticker,
+                "score_quant": setup.lens_scores[Lens.QUANT].score,
+                "score_oracle": setup.lens_scores[Lens.ORACLE].score,
+                "score_hunter": setup.lens_scores[Lens.HUNTER].score,
+                "score_chartist": setup.lens_scores[Lens.CHARTIST].score,
+                "final_score": setup.final_score,
+                "regime_at_entry": setup.regime.name,
+                "outcome_label": "PENDING"
+            }
+            self.supabase.table("sentient_memory").insert(memory_data).execute()
+        except Exception as e:
+            pass  # Table may not exist, that's OK
         
-        print(f"  -> Saved {setup.ticker}")
+        logger.info(f"Saved {setup.ticker} | Score: {setup.final_score:.1f}")
 
 
 
