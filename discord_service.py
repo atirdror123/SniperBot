@@ -9,6 +9,7 @@ load_dotenv()
 def send_scan_report(signals):
     """
     Sends a rich formatted report to Discord via Webhook.
+    Handles both StockSetup objects and dictionaries.
     """
     webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
     if not webhook_url:
@@ -19,22 +20,31 @@ def send_scan_report(signals):
         print("[DISCORD] No signals to report.")
         return
 
-    # Sort by score
-    signals.sort(key=lambda x: x.get('confidence_score', 0), reverse=True)
-    top_picks = signals[:10]
+    # Helper to get value from either object or dict
+    def get_val(item, key, default=0):
+        if hasattr(item, key):
+            return getattr(item, key, default)
+        elif isinstance(item, dict):
+            return item.get(key, default)
+        return default
+
+    # Sort by score (handle both attribute and dict access)
+    signals_list = list(signals)
+    signals_list.sort(key=lambda x: get_val(x, 'final_score', 0) or get_val(x, 'confidence_score', 0), reverse=True)
+    top_picks = signals_list[:10]
 
     # Build Embed
     embed = {
         "title": f"🚀 Sniper Report: {datetime.now().strftime('%Y-%m-%d')}",
-        "description": f"Scan complete. Found **{len(signals)}** potential setups.",
+        "description": f"Scan complete. Found **{len(signals_list)}** potential setups.",
         "color": 5763719, # Greenish
         "fields": []
     }
 
     for s in top_picks:
-        ticker = s.get('ticker')
-        score = s.get('confidence_score', 0)
-        price = s.get('entry_price', 0)
+        ticker = get_val(s, 'ticker', 'N/A')
+        score = get_val(s, 'final_score', 0) or get_val(s, 'confidence_score', 0)
+        price = get_val(s, 'price', 0) or get_val(s, 'entry_price', 0)
         
         field_value = f"**{score:.1f}** | ${price:.2f}"
         embed["fields"].append({
