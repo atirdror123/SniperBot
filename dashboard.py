@@ -62,16 +62,16 @@ st.markdown("""
         background: rgba(255, 255, 255, 0.3); 
     }
     
-    /* RADIO BUTTONS: Fix invisible text */
+    /* RADIO BUTTONS: Fix invisible text - BLACK text */
     .stRadio > div[role="radiogroup"] > label {
-        color: #FFFFFF !important;
-        background: rgba(255, 255, 255, 0.1);
+        color: #1A2980 !important;
+        background: rgba(255, 255, 255, 0.85);
         padding: 8px 16px;
         border-radius: 8px;
         margin-right: 8px;
     }
     .stRadio > div[role="radiogroup"] > label:hover {
-        background: rgba(255, 255, 255, 0.25);
+        background: rgba(255, 255, 255, 1.0);
     }
     
     /* SELECTBOX DROPDOWN: Dark text on white background */
