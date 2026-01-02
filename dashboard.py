@@ -74,22 +74,39 @@ st.markdown("""
         background: rgba(255, 255, 255, 1.0);
     }
     
-    /* SELECTBOX DROPDOWN: Dark text on white background */
-    div[data-baseweb="select"] > div {
-        background: rgba(255, 255, 255, 0.9) !important;
-        color: #1A2980 !important;
+    /* SELECTBOX DROPDOWN: Force dark text everywhere */
+    div[data-baseweb="select"] * {
+        color: #000000 !important;
     }
+    div[data-baseweb="select"] > div {
+        background: #FFFFFF !important;
+        color: #000000 !important;
+    }
+    div[data-baseweb="select"] input {
+        color: #000000 !important;
+    }
+    
+    /* DROPDOWN MENU OPTIONS */
     div[data-baseweb="popover"] {
         background: #FFFFFF !important;
     }
-    div[data-baseweb="popover"] li {
-        color: #1A2980 !important;
+    div[data-baseweb="popover"] * {
+        color: #000000 !important;
+    }
+    ul[role="listbox"] li {
+        color: #000000 !important;
+        background: #FFFFFF !important;
+    }
+    ul[role="listbox"] li:hover {
+        background: #E0E0E0 !important;
     }
     
     /* MULTISELECT: Fix text visibility */
+    .stMultiSelect * {
+        color: #000000 !important;
+    }
     .stMultiSelect > div > div {
-        background: rgba(255, 255, 255, 0.9) !important;
-        color: #1A2980 !important;
+        background: #FFFFFF !important;
     }
 </style>
 """, unsafe_allow_html=True)
