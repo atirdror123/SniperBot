@@ -561,26 +561,57 @@ if not history_df.empty:
     recent.columns = ['Date', 'Regime', 'Reason']
     st.dataframe(recent, use_container_width=True)
 
-# Outcome Statistics
+# Outcome Statistics (Multi-Period)
 outcomes_df = fetch_outcome_stats()
 if not outcomes_df.empty:
-    st.subheader("🎯 Outcome Statistics")
+    st.subheader("🎯 Multi-Period Outcome Tracking")
     
-    o1, o2, o3, o4 = st.columns(4)
+    # Count outcomes per period
+    periods = [10, 20, 30, 40, 50, 60]
     
+    # Summary metrics
     total = len(outcomes_df)
-    wins = len(outcomes_df[outcomes_df['outcome_label'] == 'WIN'])
-    losses = len(outcomes_df[outcomes_df['outcome_label'] == 'LOSS'])
-    pending = len(outcomes_df[outcomes_df['outcome_label'] == 'PENDING'])
+    st.metric("Total Stocks in Training", total)
     
-    o1.metric("Total Picks", total)
-    o2.metric("Wins (+10%)", wins, delta=f"{wins/total*100:.0f}%" if total > 0 else "0%")
-    o3.metric("Losses (-5%)", losses)
-    o4.metric("Pending Review", pending)
+    # Create period breakdown table
+    st.markdown("### Outcome by Review Period")
     
-    # Win Rate
-    if wins + losses > 0:
-        win_rate = wins / (wins + losses) * 100
+    period_data = []
+    for p in periods:
+        outcome_col = f"outcome_{p}d"
+        pct_col = f"pct_{p}d"
+        
+        if outcome_col in outcomes_df.columns:
+            wins = len(outcomes_df[outcomes_df[outcome_col] == 'WIN'])
+            losses = len(outcomes_df[outcomes_df[outcome_col] == 'LOSS'])
+            holds = len(outcomes_df[outcomes_df[outcome_col] == 'HOLD'])
+            pending = len(outcomes_df[outcomes_df[outcome_col] == 'PENDING'])
+            
+            # Average return for reviewed stocks
+            reviewed = outcomes_df[outcomes_df[pct_col].notna()] if pct_col in outcomes_df.columns else pd.DataFrame()
+            avg_return = reviewed[pct_col].mean() * 100 if len(reviewed) > 0 else 0
+            
+            period_data.append({
+                'Period': f"{p} Days",
+                '✅ Wins': wins,
+                '❌ Losses': losses,
+                '⏸️ Holds': holds,
+                '⏳ Pending': pending,
+                'Avg Return': f"{avg_return:.1f}%" if avg_return != 0 else "-"
+            })
+    
+    if period_data:
+        period_table = pd.DataFrame(period_data)
+        st.dataframe(period_table, use_container_width=True, hide_index=True)
+    
+    # Overall Win Rate (across all periods)
+    all_wins = sum(len(outcomes_df[outcomes_df[f'outcome_{p}d'] == 'WIN']) for p in periods if f'outcome_{p}d' in outcomes_df.columns)
+    all_losses = sum(len(outcomes_df[outcomes_df[f'outcome_{p}d'] == 'LOSS']) for p in periods if f'outcome_{p}d' in outcomes_df.columns)
+    
+    if all_wins + all_losses > 0:
+        win_rate = all_wins / (all_wins + all_losses) * 100
+        st.markdown(f"### Overall Win Rate: **{win_rate:.1f}%**")
         st.progress(min(win_rate/100, 1.0))
-        st.caption(f"Win Rate: {win_rate:.1f}%")
+        st.caption(f"Based on {all_wins + all_losses} completed period reviews")
+
 

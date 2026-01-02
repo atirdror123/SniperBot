@@ -1,11 +1,11 @@
 """
-Layer 3: Self-Learning Core (Sentient Brain) - ADVANCED
+Layer 3: Self-Learning Core (Sentient Brain) - MULTI-PERIOD
 
 Implements:
 - Epsilon-greedy weight selection for exploration
 - PROPORTIONAL gradient descent (lens-specific adjustment)
-- Multi-period review (10, 20, 30 days)
-- Weight history logging with detailed attribution
+- MULTI-PERIOD tracking (10, 20, 30, 40, 50, 60 days)
+- Weighted aggregate scoring (recent periods matter more)
 """
 import os
 from datetime import datetime
@@ -17,15 +17,30 @@ from scan_logger import get_logger
 
 logger = get_logger("SENTIENT_BRAIN")
 
+# Review periods in days
+REVIEW_PERIODS = [10, 20, 30, 40, 50, 60]
+
+# Weights for each period (more recent = less weight, final = most weight)
+# This gives more importance to sustained performance
+PERIOD_WEIGHTS = {
+    10: 0.10,   # Early signal - low weight
+    20: 0.15,
+    30: 0.20,
+    40: 0.20,
+    50: 0.15,
+    60: 0.20    # Final outcome - high weight
+}
+
 
 class SentientBrain:
     """
-    Advanced self-learning core with proportional gradient descent.
+    Advanced self-learning core with multi-period tracking.
     
     Key features:
-    - Adjusts each lens weight proportionally to its contribution
-    - High-scoring lenses get more credit for wins, more blame for losses
-    - Low-scoring lenses are adjusted less
+    - Tracks outcomes at 6 checkpoints (10d to 60d)
+    - Each outcome is stored separately (no overwriting)
+    - Weight adjustments use weighted average of all outcomes
+    - Proportional gradient descent per lens
     """
     
     def __init__(self):
@@ -38,7 +53,7 @@ class SentientBrain:
             logger.warning("Supabase not connected. Using default static weights.")
         
         # Learning hyperparameters
-        self.base_learning_rate = 0.03  # Base rate before proportional scaling
+        self.base_learning_rate = 0.02  # Reduced since we learn 6x per stock
         self.epsilon = 0.10             # Exploration rate (10% random weights)
         self.min_weight = 0.3           # Minimum weight value
         self.max_weight = 2.0           # Maximum weight value
@@ -48,10 +63,7 @@ class SentientBrain:
         self.loss_threshold = -0.05     # -5% = LOSS
 
     def get_weights(self, regime: MarketRegime) -> Dict[Lens, float]:
-        """
-        Retrieves dynamic weights for the current market regime.
-        Implements Epsilon-Greedy exploration.
-        """
+        """Retrieves dynamic weights for the current market regime."""
         # Exploration: 10% of the time, try random weights
         if random.random() < self.epsilon:
             logger.info("Epsilon Triggered: Exploring randomized weights.")
@@ -85,86 +97,87 @@ class SentientBrain:
         }
         return regime_defaults.get(regime, regime_defaults[MarketRegime.CHOP])
 
-    def log_outcome(self, memory_id: int, outcome_pct: float, regime: str, 
-                    lens_scores: Dict[str, float], review_period: int = 20):
+    def log_period_outcome(self, memory_id: int, outcome_pct: float, regime: str,
+                           lens_scores: Dict[str, float], period: int):
         """
-        PROPORTIONAL Gradient Descent Weight Adjustment.
+        Logs outcome for a SPECIFIC period (10, 20, 30, 40, 50, or 60 days).
+        Does NOT overwrite other periods.
         
         Args:
             memory_id: ID of the sentient_memory entry
-            outcome_pct: Percentage gain/loss (e.g., 0.15 for +15%)
-            regime: Market regime at entry time (BULL, BEAR, CHOP)
-            lens_scores: Dict of lens scores {"QUANT": 80, "ORACLE": 60, ...}
-            review_period: Days since entry (10, 20, or 30)
-        
-        How it works:
-            - Each lens is adjusted proportionally to its contribution
-            - If HUNTER=90 and ORACLE=60, HUNTER gets 90/(90+60) = 60% of the adjustment
-            - WIN: High-scoring lenses get credit → weight increases
-            - LOSS: High-scoring lenses get blame → weight decreases
+            outcome_pct: Percentage gain/loss
+            regime: Market regime at entry time
+            lens_scores: Dict of lens scores
+            period: Days since entry (10, 20, 30, 40, 50, or 60)
         """
         if not self.supabase:
-            logger.warning("Supabase not connected. Cannot log outcome.")
+            return
+            
+        if period not in REVIEW_PERIODS:
+            logger.warning(f"Invalid period {period}. Must be one of {REVIEW_PERIODS}")
             return
 
         # Classify outcome
         if outcome_pct >= self.win_threshold:
             outcome_label = "WIN"
-            direction = 1  # Increase weights
+            direction = 1
         elif outcome_pct <= self.loss_threshold:
             outcome_label = "LOSS"
-            direction = -1  # Decrease weights
+            direction = -1
         else:
             outcome_label = "HOLD"
-            direction = 0  # No change
+            direction = 0
         
-        logger.info(f"[{review_period}D] Processing: {outcome_pct*100:.1f}% -> {outcome_label}")
+        logger.info(f"[{period}D] {outcome_pct*100:+.1f}% -> {outcome_label}")
 
-        # Update sentient_memory record
+        # Update the specific period columns
+        outcome_col = f"outcome_{period}d"
+        pct_col = f"pct_{period}d"
+        
         try:
             self.supabase.table("sentient_memory").update({
-                "outcome_label": outcome_label,
-                "outcome_pct": outcome_pct,
-                "reviewed_at": datetime.now().isoformat()
+                outcome_col: outcome_label,
+                pct_col: outcome_pct
             }).eq("id", memory_id).execute()
         except Exception as e:
-            logger.error(f"Failed to update sentient_memory: {e}")
+            logger.error(f"Failed to update {outcome_col}: {e}")
             return
 
-        # Skip weight update if HOLD
+        # Skip weight adjustment for HOLD
         if direction == 0:
             return
 
-        # Calculate proportional adjustments
+        # Adjust weights with period-specific weighting
+        period_weight = PERIOD_WEIGHTS.get(period, 0.15)
+        self._adjust_weights(regime, lens_scores, direction, period_weight, outcome_pct, period)
+
+    def _adjust_weights(self, regime: str, lens_scores: Dict[str, float], 
+                        direction: int, period_weight: float, outcome_pct: float, period: int):
+        """Applies proportional gradient descent weight adjustment."""
+        
+        # Calculate proportional contributions
         total_score = sum(lens_scores.values())
         if total_score == 0:
-            logger.warning("Total lens score is 0. Cannot calculate proportions.")
             return
         
-        # Proportional contribution of each lens
-        proportions = {
-            lens: score / total_score 
-            for lens, score in lens_scores.items()
-        }
+        proportions = {lens: score / total_score for lens, score in lens_scores.items()}
         
-        # Scale adjustment by outcome magnitude (bigger win/loss = more learning)
-        magnitude_scale = min(abs(outcome_pct) / 0.10, 2.0)  # Cap at 2x for extreme moves
+        # Scale by outcome magnitude (capped at 2x)
+        magnitude_scale = min(abs(outcome_pct) / 0.10, 2.0)
         
         # Get current weights
         try:
             response = self.supabase.table("lens_weights").select("*").eq("regime", regime).execute()
             if not response.data:
-                logger.error(f"No weights found for regime {regime}")
                 return
             
             current = response.data[0]
             
-            # Calculate proportional adjustments for each lens
+            # Calculate adjustments (scaled by period weight)
             adjustments = {}
             for lens, proportion in proportions.items():
-                # Higher contributing lens gets larger adjustment
-                lens_adjustment = direction * self.base_learning_rate * proportion * magnitude_scale
-                adjustments[lens] = lens_adjustment
+                adj = direction * self.base_learning_rate * proportion * magnitude_scale * period_weight
+                adjustments[lens] = adj
             
             # Apply adjustments
             new_weights = {
@@ -175,27 +188,23 @@ class SentientBrain:
                 "updated_at": datetime.now().isoformat()
             }
             
-            # Update weights
             self.supabase.table("lens_weights").update(new_weights).eq("regime", regime).execute()
             
-            # Log to history with detailed attribution
+            # Log to history
             history_entry = {
                 "regime": regime,
                 "w_quant": new_weights["w_quant"],
                 "w_oracle": new_weights["w_oracle"],
                 "w_hunter": new_weights["w_hunter"],
                 "w_chartist": new_weights["w_chartist"],
-                "reason": f"{outcome_label} ({outcome_pct*100:+.1f}%) @{review_period}D | " + 
-                          f"Q:{adjustments.get('QUANT', 0):+.3f} O:{adjustments.get('ORACLE', 0):+.3f} " +
-                          f"H:{adjustments.get('HUNTER', 0):+.3f} C:{adjustments.get('CHARTIST', 0):+.3f}"
+                "reason": f"@{period}D: {outcome_pct*100:+.1f}% (pw={period_weight:.2f})"
             }
             self.supabase.table("weight_history").insert(history_entry).execute()
             
-            logger.info(f"Weights updated for {regime}: Q={new_weights['w_quant']:.3f} O={new_weights['w_oracle']:.3f} "
-                       f"H={new_weights['w_hunter']:.3f} C={new_weights['w_chartist']:.3f}")
+            logger.info(f"Weights adjusted for {regime} @{period}D")
             
         except Exception as e:
-            logger.error(f"Failed to update weights: {e}")
+            logger.error(f"Failed to adjust weights: {e}")
 
     def _clamp(self, value: float) -> float:
         """Clamps weight value to valid range."""

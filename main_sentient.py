@@ -372,8 +372,8 @@ class SentientSniperBot:
                 "score_hunter": setup.lens_scores[Lens.HUNTER].score,
                 "score_chartist": setup.lens_scores[Lens.CHARTIST].score,
                 "final_score": setup.final_score,
-                "regime": setup.regime.name,
-                "outcome_label": "PENDING"
+                "regime": setup.regime.name
+                # outcome columns default to 'PENDING' in DB
             }
             self.supabase.table("sentient_memory").insert(memory_data).execute()
             logger.info(f"Saved to sentient_memory: {setup.ticker}")
