@@ -472,3 +472,115 @@ if not df.empty:
 
 else:
     st.warning("No Data Found in Database.")
+
+# --- LEARNING TRACKER SECTION ---
+st.markdown("---")
+st.header("🧠 SELF-LEARNING TRACKER")
+
+@st.cache_data(ttl=300)
+def fetch_weight_history():
+    """Fetches weight history for visualization."""
+    try:
+        if supabase:
+            data = supabase.table("weight_history").select("*").order("created_at", desc=True).limit(50).execute()
+            return pd.DataFrame(data.data) if data.data else pd.DataFrame()
+    except:
+        pass
+    return pd.DataFrame()
+
+@st.cache_data(ttl=300)
+def fetch_lens_weights():
+    """Fetches current lens weights."""
+    try:
+        if supabase:
+            data = supabase.table("lens_weights").select("*").execute()
+            return pd.DataFrame(data.data) if data.data else pd.DataFrame()
+    except:
+        pass
+    return pd.DataFrame()
+
+@st.cache_data(ttl=300)
+def fetch_outcome_stats():
+    """Fetches outcome statistics from sentient_memory."""
+    try:
+        if supabase:
+            data = supabase.table("sentient_memory").select("*").execute()
+            return pd.DataFrame(data.data) if data.data else pd.DataFrame()
+    except:
+        pass
+    return pd.DataFrame()
+
+# Current Weights
+weights_df = fetch_lens_weights()
+if not weights_df.empty:
+    st.subheader("📊 Current Lens Weights (by Regime)")
+    
+    w1, w2, w3 = st.columns(3)
+    
+    for idx, col in enumerate([w1, w2, w3]):
+        if idx < len(weights_df):
+            row = weights_df.iloc[idx]
+            regime = row.get('regime', 'N/A')
+            with col:
+                st.markdown(f"**{regime}**")
+                st.markdown(f"- QUANT: `{row.get('w_quant', 1.0):.3f}`")
+                st.markdown(f"- ORACLE: `{row.get('w_oracle', 1.0):.3f}`")
+                st.markdown(f"- HUNTER: `{row.get('w_hunter', 1.0):.3f}`")
+                st.markdown(f"- CHARTIST: `{row.get('w_chartist', 1.0):.3f}`")
+
+# Weight History Chart
+history_df = fetch_weight_history()
+if not history_df.empty:
+    st.subheader("📈 Weight Evolution Over Time")
+    
+    # Parse data
+    history_df['created_at'] = pd.to_datetime(history_df['created_at'])
+    
+    # Create chart
+    fig = go.Figure()
+    for lens in ['w_quant', 'w_oracle', 'w_hunter', 'w_chartist']:
+        fig.add_trace(go.Scatter(
+            x=history_df['created_at'],
+            y=history_df[lens],
+            mode='lines+markers',
+            name=lens.replace('w_', '').upper()
+        ))
+    
+    fig.update_layout(
+        title="Lens Weight Changes",
+        xaxis_title="Date",
+        yaxis_title="Weight",
+        template="plotly_dark",
+        height=400
+    )
+    st.plotly_chart(fig, use_container_width=True)
+    
+    # Recent Changes Table
+    st.subheader("📝 Recent Weight Adjustments")
+    recent = history_df[['created_at', 'regime', 'reason']].head(10)
+    recent.columns = ['Date', 'Regime', 'Reason']
+    st.dataframe(recent, use_container_width=True)
+
+# Outcome Statistics
+outcomes_df = fetch_outcome_stats()
+if not outcomes_df.empty:
+    st.subheader("🎯 Outcome Statistics")
+    
+    o1, o2, o3, o4 = st.columns(4)
+    
+    total = len(outcomes_df)
+    wins = len(outcomes_df[outcomes_df['outcome_label'] == 'WIN'])
+    losses = len(outcomes_df[outcomes_df['outcome_label'] == 'LOSS'])
+    pending = len(outcomes_df[outcomes_df['outcome_label'] == 'PENDING'])
+    
+    o1.metric("Total Picks", total)
+    o2.metric("Wins (+10%)", wins, delta=f"{wins/total*100:.0f}%" if total > 0 else "0%")
+    o3.metric("Losses (-5%)", losses)
+    o4.metric("Pending Review", pending)
+    
+    # Win Rate
+    if wins + losses > 0:
+        win_rate = wins / (wins + losses) * 100
+        st.progress(min(win_rate/100, 1.0))
+        st.caption(f"Win Rate: {win_rate:.1f}%")
+
