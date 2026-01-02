@@ -61,6 +61,36 @@ st.markdown("""
     .stButton>button:hover { 
         background: rgba(255, 255, 255, 0.3); 
     }
+    
+    /* RADIO BUTTONS: Fix invisible text */
+    .stRadio > div[role="radiogroup"] > label {
+        color: #FFFFFF !important;
+        background: rgba(255, 255, 255, 0.1);
+        padding: 8px 16px;
+        border-radius: 8px;
+        margin-right: 8px;
+    }
+    .stRadio > div[role="radiogroup"] > label:hover {
+        background: rgba(255, 255, 255, 0.25);
+    }
+    
+    /* SELECTBOX DROPDOWN: Dark text on white background */
+    div[data-baseweb="select"] > div {
+        background: rgba(255, 255, 255, 0.9) !important;
+        color: #1A2980 !important;
+    }
+    div[data-baseweb="popover"] {
+        background: #FFFFFF !important;
+    }
+    div[data-baseweb="popover"] li {
+        color: #1A2980 !important;
+    }
+    
+    /* MULTISELECT: Fix text visibility */
+    .stMultiSelect > div > div {
+        background: rgba(255, 255, 255, 0.9) !important;
+        color: #1A2980 !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
