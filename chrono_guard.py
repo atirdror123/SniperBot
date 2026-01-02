@@ -17,7 +17,7 @@ MARKET_OPEN = time(9, 30)
 MARKET_CLOSE = time(16, 0)
 EST = ZoneInfo("America/New_York")
 
-# NYSE 2024-2025 Holiday Calendar (Updated Annually)
+# NYSE Holiday Calendar (Updated Annually)
 # Source: https://www.nyse.com/markets/hours-calendars
 NYSE_HOLIDAYS = [
     # 2024
@@ -42,6 +42,17 @@ NYSE_HOLIDAYS = [
     "2025-09-01",  # Labor Day
     "2025-11-27",  # Thanksgiving
     "2025-12-25",  # Christmas
+    # 2026
+    "2026-01-01",  # New Year's Day
+    "2026-01-19",  # MLK Day
+    "2026-02-16",  # Presidents Day
+    "2026-04-03",  # Good Friday
+    "2026-05-25",  # Memorial Day
+    "2026-06-19",  # Juneteenth
+    "2026-07-03",  # Independence Day (observed)
+    "2026-09-07",  # Labor Day
+    "2026-11-26",  # Thanksgiving
+    "2026-12-25",  # Christmas
 ]
 
 
