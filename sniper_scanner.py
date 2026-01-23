@@ -21,6 +21,7 @@ from supabase import create_client
 from pressure_cooker import pressure_cooker_filter
 from filter_config import POSITION_CONFIG, LENS_WEIGHTS, MIN_LENS_SCORES
 from scan_logger import get_logger
+from tournament_ai import run_tournament
 
 logger = get_logger("SNIPER_SCANNER")
 
@@ -130,15 +131,32 @@ def run_sniper_scan(universe: list) -> list:
         logger.info(f"  {ticker}: Score={score:.1f} (RVOL={rvol_score:.0f} "
                    f"BlueSky={blue_sky_score:.0f} RSI={rsi_score:.0f} Mom={momentum_score:.0f})")
     
-    # Stage 3: Pick Top 3
-    logger.info("\n🎯 STAGE 3: TOP 3 SELECTION")
+    # Stage 3: Tournament AI Selection
+    logger.info("\n🎯 STAGE 3: TOURNAMENT AI (Risk Manager)")
     logger.info("-" * 40)
     
-    top_candidates = sorted(scored_candidates, key=lambda x: x['composite_score'], reverse=True)[:3]
+    # Run AI tournament to ruthlessly analyze and pick Top 3
+    ai_result = run_tournament(scored_candidates)
+    
+    # Extract top 3 tickers from AI result
+    top_3_tickers = [pick['ticker'] for pick in ai_result.get('top_3', [])]
+    
+    # Match back to our candidate data
+    top_candidates = []
+    for pick in ai_result.get('top_3', []):
+        ticker = pick['ticker']
+        # Find the candidate with full data
+        for c in scored_candidates:
+            if c['ticker'] == ticker:
+                c['ai_confidence'] = pick.get('confidence', 70)
+                c['ai_reason'] = pick.get('entry_reason', 'Selected by AI')
+                top_candidates.append(c)
+                break
     
     for i, candidate in enumerate(top_candidates, 1):
         logger.info(f"  #{i} {candidate['ticker']} | Score: {candidate['composite_score']:.1f} | "
-                   f"Price: ${candidate['price']:.2f}")
+                   f"AI Confidence: {candidate.get('ai_confidence', 70)}%")
+        logger.info(f"      Reason: {candidate.get('ai_reason', 'N/A')}")
     
     logger.info("\n✅ SNIPER SCAN COMPLETE")
     
