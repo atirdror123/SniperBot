@@ -66,91 +66,126 @@ def fetch_legacy_data():
 
 df = fetch_legacy_data()
 
-if not df.empty:
-    # --- FILTERS ---
-    col1, col2 = st.columns([1, 4])
-    with col1:
-        st.markdown("### Filters")
-        status_opts = ["All"] + list(df['status'].unique())
-        status_filter = st.selectbox("Status", status_opts, index=0)
+try:
+    if not df.empty:
+        # --- FILTERS ---
+        col1, col2 = st.columns([1, 4])
+        with col1:
+            st.markdown("### Filters")
+            status_opts = ["All"] + list(df['status'].unique())
+            status_filter = st.selectbox("Status", status_opts, index=0)
+            
+        # Filter Logic
+        filtered_df = df.copy()
+        if status_filter != "All":
+            filtered_df = filtered_df[filtered_df['status'] == status_filter]
+    
+        # --- MAIN TABLE (AgGrid is fine for Legacy Data) ---
+        st.markdown("### 📋 Database Records")
         
-    # Filter Logic
-    filtered_df = df.copy()
-    if status_filter != "All":
-        filtered_df = filtered_df[filtered_df['status'] == status_filter]
-
-    # --- MAIN TABLE (AgGrid is fine for Legacy Data) ---
-    st.markdown("### 📋 Database Records")
-    
-    display_df = filtered_df[['ticker', 'created_at', 'entry_price', 'current_price', 'confidence_score', 'status', 's_hunter']].copy()
-    display_df.columns = ['Ticker', 'Date', 'Entry', 'Current', 'Score', 'Status', 'Hunter']
-    
-    # Format
-    display_df['Date'] = display_df['Date'].dt.strftime('%Y-%m-%d')
-    display_df['Score'] = display_df['Score'].round(1)
-    
-    gb = GridOptionsBuilder.from_dataframe(display_df)
-    gb.configure_selection('single', use_checkbox=False)
-    gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=15)
-    
-    # Style Score
-    gb.configure_column("Score", cellStyle={'fontWeight': 'bold'})
-    
-    grid_response = AgGrid(
-        display_df, 
-        gridOptions=gb.build(), 
-        height=500, 
-        theme='balham',
-        allow_unsafe_jscode=True
-    )
-    
-    # --- INSPECTOR ---
-    selection = grid_response['selected_rows']
-    if selection is not None and not isinstance(selection, int) and len(selection) > 0:
-        if isinstance(selection, pd.DataFrame):
-             selected_ticker = selection.iloc[0]['Ticker']
-        elif isinstance(selection, list):
-             item = selection[0]
-             selected_ticker = item.get('Ticker')
+        # Ensure columns exist (legacy data might be missing some fields)
+        cols = ['ticker', 'created_at', 'entry_price', 'confidence_score', 'status', 's_hunter']
+        if 'current_price' in filtered_df.columns:
+            cols.insert(3, 'current_price')
         else:
-             selected_ticker = None
-             
-        if selected_ticker:
-            row = filtered_df[filtered_df['ticker'] == selected_ticker].iloc[0]
-            
-            st.markdown("---")
-            st.subheader(f"🔍 Inspector: {selected_ticker}")
-            
-            c1, c2 = st.columns(2)
-            
-            with c1:
-                # Radar Chart
-                categories = ['Quant', 'Oracle', 'Hunter', 'Chartist']
-                values = [row['s_quant'], row['s_oracle'], row['s_hunter'], row['s_chartist']]
-                categories = [*categories, categories[0]]
-                values = [*values, values[0]]
-                
-                fig = go.Figure()
-                fig.add_trace(go.Scatterpolar(
-                    r=values,
-                    theta=categories,
-                    fill='toself',
-                    name=selected_ticker,
-                    line_color='#6200EA'
-                ))
-                fig.update_layout(
-                    polar=dict(
-                        radialaxis=dict(visible=True, range=[0, 100]),
-                    ),
-                    margin=dict(l=40, r=40, t=20, b=20),
-                    height=300
-                )
-                st.plotly_chart(fig, use_container_width=True)
-            
-            with c2:
-                st.info(f"**Reasons:**\n\n{row.get('reasons', 'N/A')}")
-                with st.expander("Raw JSON Data"):
-                    st.json(row.get('raw_features', {}))
+            filtered_df['current_price'] = filtered_df['entry_price'] # Fallback
+            cols.insert(3, 'current_price')
 
-else:
-    st.info("No legacy data found.")
+        display_df = filtered_df[cols].copy()
+        
+        # Calculate Change %
+        display_df['change_pct'] = ((display_df['current_price'] - display_df['entry_price']) / display_df['entry_price']) * 100
+        
+        display_df.columns = ['Ticker', 'Date', 'Entry', 'Score', 'Status', 'Hunter', 'Current', 'Change %']
+        
+        # Reorder columns
+        display_df = display_df[['Ticker', 'Date', 'Entry', 'Current', 'Change %', 'Score', 'Status', 'Hunter']]
+        
+        # Format
+        display_df['Date'] = display_df['Date'].dt.strftime('%Y-%m-%d')
+        display_df['Score'] = display_df['Score'].round(1)
+        display_df['Change %'] = display_df['Change %'].round(2)
+        
+        gb = GridOptionsBuilder.from_dataframe(display_df)
+        gb.configure_selection('single', use_checkbox=False)
+        gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=15)
+        
+        # Style Score & Change
+        gb.configure_column("Score", cellStyle={'fontWeight': 'bold'})
+        
+        # Color Code Change %
+        cells_ret = JsCode("""
+        function(params) {
+            if (params.value > 0) { return {'color': '#00873C', 'fontWeight': 'bold'}; }
+            else if (params.value < 0) { return {'color': '#EB0029', 'fontWeight': 'bold'}; }
+            return {'color': '#333'};
+        }
+        """)
+        gb.configure_column("Change %", cellStyle=cells_ret)
+        
+        grid_response = AgGrid(
+            display_df, 
+            gridOptions=gb.build(), 
+            height=500, 
+            theme='balham',
+            allow_unsafe_jscode=True
+        )
+        
+        # --- INSPECTOR ---
+        selection = grid_response['selected_rows']
+        if selection is not None:
+             # Handle different AgGrid return types defensively
+             selected_ticker = None
+             if isinstance(selection, pd.DataFrame) and not selection.empty:
+                 selected_ticker = selection.iloc[0]['Ticker']
+             elif isinstance(selection, list) and len(selection) > 0:
+                 item = selection[0]
+                 if isinstance(item, dict):
+                     selected_ticker = item.get('Ticker')
+                 else:
+                     try: selected_ticker = item['Ticker']
+                     except: pass
+                 
+             if selected_ticker:
+                row = filtered_df[filtered_df['ticker'] == selected_ticker].iloc[0]
+                
+                st.markdown("---")
+                st.subheader(f"🔍 Inspector: {selected_ticker}")
+                
+                c1, c2 = st.columns(2)
+                
+                with c1:
+                    # Radar Chart
+                    categories = ['Quant', 'Oracle', 'Hunter', 'Chartist']
+                    values = [row['s_quant'], row['s_oracle'], row['s_hunter'], row['s_chartist']]
+                    categories = [*categories, categories[0]]
+                    values = [*values, values[0]]
+                    
+                    fig = go.Figure()
+                    fig.add_trace(go.Scatterpolar(
+                        r=values,
+                        theta=categories,
+                        fill='toself',
+                        name=selected_ticker,
+                        line_color='#6200EA'
+                    ))
+                    fig.update_layout(
+                        polar=dict(
+                            radialaxis=dict(visible=True, range=[0, 100]),
+                        ),
+                        margin=dict(l=40, r=40, t=20, b=20),
+                        height=300
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                
+                with c2:
+                    st.info(f"**Reasons:**\n\n{row.get('reasons', 'N/A')}")
+                    with st.expander("Raw JSON Data"):
+                        st.json(row.get('raw_features', {}))
+    
+    else:
+        st.info("No legacy data found.")
+        
+except Exception as e:
+    st.error("⚠️ An error occurred while rendering the page:")
+    st.exception(e)
