@@ -1,15 +1,13 @@
-name: Daily Stock Scanner
+name: Daily Sniper Scan V2.0
 
 on:
   schedule:
-    # Run at 14:45 UTC daily (15 mins after US market open at 9:30 ET always covered)
-    # Winter: 9:45 EST (Market opens 9:30 EST)
-    # Summer: 10:45 EDT (Market opens 9:30 EDT)
-    - cron: '45 14 * * *'
+    # Run at 14:45 UTC daily (15 mins after US market open)
+    - cron: '45 14 * * 1-5'  # Only weekdays
   workflow_dispatch:
 
 jobs:
-  scan:
+  sniper_scan:
     runs-on: ubuntu-latest
     
     env:
@@ -33,5 +31,6 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         
-    - name: Run Sentient Sniper
-      run: python main_sentient.py
+    - name: Run Sniper Scanner V2.0
+      run: python run_sniper_scan.py
+
