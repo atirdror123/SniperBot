@@ -96,9 +96,19 @@ try:
         # Calculate Change %
         display_df['change_pct'] = ((display_df['current_price'] - display_df['entry_price']) / display_df['entry_price']) * 100
         
-        display_df.columns = ['Ticker', 'Date', 'Entry', 'Score', 'Status', 'Hunter', 'Current', 'Change %']
+        # Rename safely
+        display_df.rename(columns={
+            'ticker': 'Ticker', 
+            'created_at': 'Date', 
+            'entry_price': 'Entry', 
+            'current_price': 'Current', 
+            'confidence_score': 'Score', 
+            'status': 'Status', 
+            's_hunter': 'Hunter',
+            'change_pct': 'Change %'
+        }, inplace=True)
         
-        # Reorder columns
+        # Reorder for display
         display_df = display_df[['Ticker', 'Date', 'Entry', 'Current', 'Change %', 'Score', 'Status', 'Hunter']]
         
         # Format
