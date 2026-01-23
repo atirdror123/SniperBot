@@ -661,4 +661,113 @@ if not outcomes_df.empty:
         st.progress(min(win_rate/100, 1.0))
         st.caption(f"Based on {all_wins + all_losses} completed period reviews")
 
+# --- SNIPER PERFORMANCE SECTION ---
+st.markdown("---")
+st.header("🎯 SNIPER ALPHA PERFORMANCE")
 
+@st.cache_data(ttl=60)
+def fetch_sniper_portfolio():
+    """Fetch SNIPER portfolio config."""
+    try:
+        if supabase:
+            data = supabase.table("portfolio_config").select("*").eq("id", "SNIPER").execute()
+            return data.data[0] if data.data else None
+    except:
+        pass
+    return None
+
+@st.cache_data(ttl=60)
+def fetch_equity_history():
+    """Fetch equity history for chart."""
+    try:
+        if supabase:
+            data = supabase.table("equity_history").select("*").eq("portfolio", "SNIPER").order("recorded_at").execute()
+            return pd.DataFrame(data.data) if data.data else pd.DataFrame()
+    except:
+        pass
+    return pd.DataFrame()
+
+@st.cache_data(ttl=60)
+def fetch_paper_positions(status='OPEN'):
+    """Fetch paper trading positions."""
+    try:
+        if supabase:
+            data = supabase.table("paper_positions").select("*").eq("portfolio", "SNIPER").eq("status", status).execute()
+            return pd.DataFrame(data.data) if data.data else pd.DataFrame()
+    except:
+        pass
+    return pd.DataFrame()
+
+# Portfolio Overview
+portfolio = fetch_sniper_portfolio()
+if portfolio:
+    p1, p2, p3 = st.columns(3)
+    
+    starting = portfolio.get('starting_capital', 100000)
+    current = portfolio.get('current_equity', 100000)
+    pnl = current - starting
+    pnl_pct = (pnl / starting) * 100
+    
+    p1.metric("Starting Capital", f"${starting:,.0f}")
+    p2.metric("Current Equity", f"${current:,.0f}", delta=f"${pnl:+,.0f}")
+    p3.metric("Total Return", f"{pnl_pct:+.2f}%")
+
+# Equity Curve
+equity_df = fetch_equity_history()
+if not equity_df.empty:
+    st.subheader("📈 Equity Curve")
+    
+    equity_df['recorded_at'] = pd.to_datetime(equity_df['recorded_at'])
+    
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=equity_df['recorded_at'],
+        y=equity_df['equity'],
+        mode='lines+markers',
+        name='Equity',
+        fill='tozeroy'
+    ))
+    fig.update_layout(
+        title="Paper Trading Performance",
+        xaxis_title="Date",
+        yaxis_title="Equity ($)",
+        template="plotly_dark",
+        height=300
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+# Open Positions
+open_df = fetch_paper_positions('OPEN')
+if not open_df.empty:
+    st.subheader("📂 Open Positions")
+    
+    display_cols = ['ticker', 'entry_price', 'quantity', 'cost_basis', 'entry_date']
+    display_df = open_df[display_cols].copy()
+    display_df.columns = ['Ticker', 'Entry Price', 'Qty', 'Cost Basis', 'Entry Date']
+    st.dataframe(display_df, use_container_width=True, hide_index=True)
+else:
+    st.info("No open positions in SNIPER portfolio.")
+
+# Closed Trades
+closed_df = fetch_paper_positions('CLOSED')
+if not closed_df.empty:
+    st.subheader("📊 Trade History")
+    
+    # Summary stats
+    total_trades = len(closed_df)
+    wins = len(closed_df[closed_df['pnl'] > 0])
+    losses = len(closed_df[closed_df['pnl'] < 0])
+    win_rate = wins / total_trades * 100 if total_trades > 0 else 0
+    total_pnl = closed_df['pnl'].sum()
+    
+    t1, t2, t3, t4 = st.columns(4)
+    t1.metric("Total Trades", total_trades)
+    t2.metric("Wins", wins)
+    t3.metric("Win Rate", f"{win_rate:.1f}%")
+    t4.metric("Total PnL", f"${total_pnl:+,.2f}")
+    
+    # Trade table
+    display_cols = ['ticker', 'entry_price', 'exit_price', 'quantity', 'pnl', 'exit_reason']
+    display_df = closed_df[display_cols].copy()
+    display_df.columns = ['Ticker', 'Entry', 'Exit', 'Qty', 'PnL', 'Exit Reason']
+    st.dataframe(display_df, use_container_width=True, hide_index=True)
