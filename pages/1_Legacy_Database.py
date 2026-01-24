@@ -8,13 +8,14 @@ import json
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
+import yfinance as yf
 from st_aggrid import AgGrid, GridOptionsBuilder
 from st_aggrid.shared import JsCode
 
 # Add parent dir to path to import utils
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from dashboard_utils import load_css, check_password, init_clients
+from dashboard_utils import load_css, check_password, init_clients, get_ai_summary
 
 # --- CONFIG ---
 st.set_page_config(page_title="Legacy Database", page_icon="🗄️", layout="wide")
@@ -80,15 +81,45 @@ try:
         if status_filter != "All":
             filtered_df = filtered_df[filtered_df['status'] == status_filter]
     
-        # --- MAIN TABLE (AgGrid is fine for Legacy Data) ---
-        st.markdown("### 📋 Database Records")
+        # --- BATCH FETCH LIVE PRICES ---
+        # Initialize current_price with entry_price as fallback
+        if 'current_price' not in filtered_df.columns or filtered_df['current_price'].isna().all():
+            filtered_df['current_price'] = filtered_df['entry_price']
         
-        # Ensure columns exist (legacy data might be missing some fields)
+        # Fetch prices for filtered items to show real-time stats
+        tickers = filtered_df['ticker'].unique().tolist()
+        if tickers:
+            try:
+                # Optimized batch download
+                data = yf.download(tickers, period="1d", group_by='ticker', progress=False, threads=True)
+                
+                if not data.empty:
+                    def get_price_from_batch(t, batch_data):
+                        try:
+                            if len(tickers) == 1:
+                                return float(batch_data['Close'].iloc[-1])
+                            return float(batch_data[t]['Close'].iloc[-1])
+                        except:
+                            return None
+                    
+                    # Update current_price with live data
+                    for t in tickers:
+                        price = get_price_from_batch(t, data)
+                        if price is not None:
+                            filtered_df.loc[filtered_df['ticker'] == t, 'current_price'] = price
+                
+            except Exception as e:
+                st.warning(f"Live Price warning: {e}")
+
+        # --- MAIN TABLE ---
+        st.markdown("### 📋 Database Records (Live Prices)")
+        
+        # Ensure columns exist
         cols = ['ticker', 'created_at', 'entry_price', 'confidence_score', 'status', 's_hunter']
         if 'current_price' in filtered_df.columns:
             cols.insert(3, 'current_price')
         else:
-            filtered_df['current_price'] = filtered_df['entry_price'] # Fallback
+            filtered_df['current_price'] = filtered_df['entry_price']
             cols.insert(3, 'current_price')
 
         display_df = filtered_df[cols].copy()
@@ -115,6 +146,8 @@ try:
         display_df['Date'] = display_df['Date'].dt.strftime('%Y-%m-%d')
         display_df['Score'] = display_df['Score'].round(1)
         display_df['Change %'] = display_df['Change %'].round(2)
+        display_df['Entry'] = display_df['Entry'].round(2)
+        display_df['Current'] = display_df['Current'].round(2)
         
         gb = GridOptionsBuilder.from_dataframe(display_df)
         gb.configure_selection('single', use_checkbox=False)
@@ -144,7 +177,6 @@ try:
         # --- INSPECTOR ---
         selection = grid_response['selected_rows']
         if selection is not None:
-             # Handle different AgGrid return types defensively
              selected_ticker = None
              if isinstance(selection, pd.DataFrame) and not selection.empty:
                  selected_ticker = selection.iloc[0]['Ticker']
@@ -189,9 +221,25 @@ try:
                     st.plotly_chart(fig, use_container_width=True)
                 
                 with c2:
-                    st.info(f"**Reasons:**\n\n{row.get('reasons', 'N/A')}")
-                    with st.expander("Raw JSON Data"):
-                        st.json(row.get('raw_features', {}))
+                    st.subheader("🤖 AI Analyst")
+                    
+                    # Prepare context
+                    context = {
+                        'ticker': selected_ticker,
+                        'score': row['confidence_score'],
+                        'features': row.get('raw_features', {}),
+                        'raw_reason': row.get('reasons', '')
+                    }
+                    
+                    if st.button("🧠 Generate AI Analysis"):
+                        with st.spinner("Consulting the Oracle..."):
+                            summary = get_ai_summary(selected_ticker, str(context))
+                        st.info(summary)
+                    else:
+                        st.info("Click button to generate fresh analysis.")
+                        with st.expander("Show Raw Data"):
+                            st.json(row.get('raw_features', {}))
+                            st.text(row.get('reasons', ''))
     
     else:
         st.info("No legacy data found.")

@@ -219,3 +219,29 @@ def get_live_price(ticker):
             return data['Close'].iloc[-1]
     except: pass
     return None
+
+
+@st.cache_data(show_spinner=False)
+def get_ai_summary(ticker, signal_data_str):
+    """
+    Uses Gemini to generate a summary. Cached.
+    """
+    key = os.getenv("GOOGLE_API_KEY") or st.secrets.get("GOOGLE_API_KEY")
+    if not key:
+        return "⚠️ Google API Key not found. Cannot generate AI summary."
+    
+    try:
+        model = genai.GenerativeModel('gemini-flash-latest')
+        prompt = f"""
+        Analyze this stock signal data for {ticker}:
+        {signal_data_str}
+        
+        Write a professional 3-sentence executive summary:
+        1. The Bullish Case (Why it was picked)
+        2. Key Risks (Red flags)
+        3. Simple Verdict
+        """
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"AI Error: {str(e)}"

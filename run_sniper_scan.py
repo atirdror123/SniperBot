@@ -11,6 +11,7 @@ import os
 import sys
 from datetime import datetime
 from dotenv import load_dotenv
+import pandas_market_calendars as mcal
 
 load_dotenv()
 
@@ -23,6 +24,20 @@ from scan_logger import get_logger
 logger = get_logger("DAILY_SNIPER")
 
 
+def is_market_day() -> bool:
+    """Check if today is a NYSE trading day (excludes weekends AND holidays)."""
+    try:
+        nyse = mcal.get_calendar('NYSE')
+        today = datetime.now().strftime('%Y-%m-%d')
+        # Get schedule for today only
+        schedule = nyse.schedule(start_date=today, end_date=today)
+        return len(schedule) > 0  # If schedule has a row, market is open
+    except Exception as e:
+        logger.warning(f"Calendar check failed: {e}. Falling back to weekday check.")
+        # Fallback to simple weekday check if calendar fails
+        return datetime.now().weekday() < 5
+
+
 def run_daily_sniper():
     """Main daily scan entry point."""
     logger.info("=" * 60)
@@ -30,13 +45,19 @@ def run_daily_sniper():
     logger.info(f"Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     logger.info("=" * 60)
     
+    # Check if market is open today
+    if not is_market_day():
+        logger.info("📅 Weekend detected. Markets are closed.")
+        logger.info("✅ SCAN SKIPPED - No action needed.")
+        return 0  # Success, just nothing to do
+    
     # Fetch full stock universe
     logger.info("\n📡 Fetching stock universe...")
     universe = fetch_universe()
     
     if not universe:
-        logger.error("Failed to fetch universe. Exiting.")
-        return
+        logger.warning("Failed to fetch universe. Exiting.")
+        return 1  # Error
     
     logger.info(f"Universe size: {len(universe)} stocks")
     
@@ -54,7 +75,9 @@ def run_daily_sniper():
         logger.info("\n⚠️ No stocks passed all filters today.")
     
     logger.info("\n✅ DAILY SNIPER SCAN COMPLETE")
+    return 0  # Success
 
 
 if __name__ == "__main__":
-    run_daily_sniper()
+    exit_code = run_daily_sniper()
+    sys.exit(exit_code)
