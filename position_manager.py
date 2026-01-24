@@ -3,9 +3,8 @@ Paper Trading Engine - Position Manager
 
 Manages paper trading positions with:
 - Stop Loss: -3% hard stop
-- Take Profit 1: +5% (sell 50%, move SL to breakeven)
-- Take Profit 2: +10% (sell remaining)
-- Time Stop: <1% move in 48 hours -> sell
+- Take Profit: +10% (sell all)
+- Time Stop: <1% move in 72 hours -> sell
 """
 import os
 import sys
@@ -89,25 +88,13 @@ def check_positions():
             exit_qty = quantity
             logger.info(f"  🔴 {ticker}: STOP LOSS triggered ({pct_change:.1f}%)")
         
-        # 2. TAKE PROFIT 2: +10% (sell all remaining)
-        elif pct_change >= EXIT_CONFIG['take_profit_2_pct']:
-            exit_reason = 'TAKE_PROFIT_2'
+        # 2. TAKE PROFIT: +10% (sell all)
+        elif pct_change >= EXIT_CONFIG['take_profit_pct']:
+            exit_reason = 'TAKE_PROFIT'
             exit_qty = quantity
-            logger.info(f"  🟢 {ticker}: TAKE PROFIT 2 triggered ({pct_change:.1f}%)")
+            logger.info(f"  🟢 {ticker}: TAKE PROFIT triggered ({pct_change:.1f}%)")
         
-        # 3. TAKE PROFIT 1: +5% (sell 50%)
-        elif pct_change >= EXIT_CONFIG['take_profit_1_pct']:
-            # Only trigger TP1 once (check if we already sold half)
-            original_cost = pos.get('cost_basis', 0)
-            current_value = quantity * entry_price
-            
-            # If current position is roughly original size, we haven't taken TP1 yet
-            if abs(current_value - original_cost) < 100:  # Allow $100 tolerance
-                exit_reason = 'TAKE_PROFIT_1'
-                exit_qty = quantity // 2  # Sell half
-                logger.info(f"  🟡 {ticker}: TAKE PROFIT 1 triggered ({pct_change:.1f}%) - selling 50%")
-        
-        # 4. TIME STOP: <1% move in 48 hours
+        # 3. TIME STOP: <1% move in 72 hours
         elif entry_date:
             try:
                 entry_dt = datetime.fromisoformat(entry_date.replace('Z', '+00:00'))

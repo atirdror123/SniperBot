@@ -61,9 +61,8 @@ POSITION_CONFIG = {
 # Exit Rules
 EXIT_CONFIG = {
     'stop_loss_pct': -3.0,        # Hard stop at -3%
-    'take_profit_1_pct': 5.0,     # First target: +5% (sell 50%)
-    'take_profit_2_pct': 10.0,    # Second target: +10% (sell remaining)
-    'time_stop_hours': 48,        # Exit if < 1% move in 48 hours
+    'take_profit_pct': 10.0,      # Take profit target: +10% (sell all)
+    'time_stop_hours': 72,        # Exit if < 1% move in 72 hours
     'time_stop_min_move': 1.0,    # Minimum required move %
 }
 
