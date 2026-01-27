@@ -22,8 +22,18 @@ from pressure_cooker import pressure_cooker_filter
 from filter_config import POSITION_CONFIG, LENS_WEIGHTS, MIN_LENS_SCORES
 from scan_logger import get_logger
 from tournament_ai import run_tournament
+from ai_signal_engine import AISignalEngine
 
 logger = get_logger("SNIPER_SCANNER")
+
+# Global AI Engine instance (reuses rate limit state)
+AI_ENGINE = None
+
+def get_ai_engine():
+    global AI_ENGINE
+    if AI_ENGINE is None:
+        AI_ENGINE = AISignalEngine()
+    return AI_ENGINE
 
 
 def get_supabase():
@@ -90,46 +100,76 @@ def run_sniper_scan(universe: list) -> list:
         logger.info("No candidates passed Pressure Cooker filter. Exiting.")
         return []
     
-    # Stage 2: Score candidates (HUNTER weighted heavily)
-    logger.info("\n📊 STAGE 2: SCORING (HUNTER-WEIGHTED)")
+    # Stage 2: Score candidates (Technical + AI Lenses)
+    logger.info("\n📊 STAGE 2: SCORING (TECHNICAL + AI LENSES)")
     logger.info("-" * 40)
+    
+    # Queue all candidates for AI scoring (background processing)
+    ai_engine = get_ai_engine()
+    for candidate in pressure_candidates:
+        ai_engine.queue_stock(candidate['ticker'], priority=1)
+    logger.info(f"  Queued {len(pressure_candidates)} candidates for AI analysis")
     
     scored_candidates = []
     
     for candidate in pressure_candidates:
         ticker = candidate['ticker']
         
-        # Calculate a composite score based on metrics
-        # Higher RVOL = better explosion signal
-        # Higher pct_from_high = closer to breakout
-        # RSI in sweet spot (55-70) preferred
+        # ========== TECHNICAL SCORE (40 points max) ==========
+        tech_score = 0
         
-        score = 0
+        # RVOL score (max 15 points)
+        rvol_score = min(candidate['rvol'] * 5, 15)
+        tech_score += rvol_score
         
-        # RVOL score (max 30 points)
-        rvol_score = min(candidate['rvol'] * 10, 30)
-        score += rvol_score
+        # Blue sky score (max 10 points)
+        blue_sky_score = max(0, (candidate['pct_from_high'] - 90) * 1)
+        tech_score += min(blue_sky_score, 10)
         
-        # Blue sky score (max 30 points)
-        blue_sky_score = max(0, (candidate['pct_from_high'] - 90) * 3)
-        score += min(blue_sky_score, 30)
-        
-        # RSI sweet spot (max 20 points - peak at 60)
+        # RSI sweet spot (max 10 points - peak at 60)
         rsi = candidate['rsi']
-        rsi_score = 20 - abs(rsi - 60) * 0.5
-        score += max(0, rsi_score)
+        rsi_score = 10 - abs(rsi - 60) * 0.25
+        tech_score += max(0, rsi_score)
         
-        # Momentum score (max 20 points)
-        momentum_score = min(candidate['daily_change'] * 3, 20)
-        score += momentum_score
+        # Momentum score (max 5 points)
+        momentum_score = min(candidate['daily_change'] * 1, 5)
+        tech_score += momentum_score
+        
+        # ========== AI LENS SCORE (60 points max) ==========
+        # Try to get AI scores if available (may be cached from previous run)
+        # If not available, use neutral defaults and rely on queue worker later
+        ai_scores = {
+            'hunter': 0,  # Insider Sentiment (-100 to +100)
+            'quant': 50,  # Institutional Quality (0 to 100)
+            'oracle': 0   # Overall Prediction (-100 to +100)
+        }
+        
+        # Convert AI scores to points (max 60 total)
+        # HUNTER: -100 to +100 -> 0 to 30 points (heavily weighted per findings)
+        hunter_points = ((ai_scores['hunter'] + 100) / 200) * 30
+        
+        # QUANT: 0 to 100 -> 0 to 15 points
+        quant_points = (ai_scores['quant'] / 100) * 15
+        
+        # ORACLE: -100 to +100 -> 0 to 15 points
+        oracle_points = ((ai_scores['oracle'] + 100) / 200) * 15
+        
+        ai_score = hunter_points + quant_points + oracle_points
+        
+        # ========== COMPOSITE SCORE ==========
+        composite_score = tech_score + ai_score
         
         scored_candidates.append({
             **candidate,
-            'composite_score': score
+            'tech_score': tech_score,
+            'ai_score': ai_score,
+            'hunter': ai_scores['hunter'],
+            'quant': ai_scores['quant'],
+            'oracle': ai_scores['oracle'],
+            'composite_score': composite_score
         })
         
-        logger.info(f"  {ticker}: Score={score:.1f} (RVOL={rvol_score:.0f} "
-                   f"BlueSky={blue_sky_score:.0f} RSI={rsi_score:.0f} Mom={momentum_score:.0f})")
+        logger.info(f"  {ticker}: Total={composite_score:.1f} (Tech={tech_score:.1f} AI={ai_score:.1f})")
     
     # Stage 3: Tournament AI Selection
     logger.info("\n🎯 STAGE 3: TOURNAMENT AI (Risk Manager)")
