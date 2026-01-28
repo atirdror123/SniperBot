@@ -30,7 +30,8 @@ load_dotenv()
 # Gemini Setup - Use v1 REST API instead of SDK (SDK uses v1beta which returns 404)
 import requests
 GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash-lite:generateContent"
+# Use verified available model: gemini-2.0-flash
+GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent"
 
 # Supabase Setup
 from supabase import create_client
@@ -41,7 +42,8 @@ SUPABASE_KEY = os.getenv('SUPABASE_KEY')
 class AISignalEngine:
     """AI-powered signal engine with Smart Queue for rate limit management."""
     
-    MIN_DELAY_SECONDS = 60  # Minimum delay between API calls
+    MIN_DELAY_SECONDS = 4  # Reduced - Tier 1 has higher limits
+    DAILY_REQUEST_LIMIT = 500  # BUDGET PROTECTION: Max ~$10/month
     
     def __init__(self):
         self.api_key = GOOGLE_API_KEY
@@ -49,18 +51,24 @@ class AISignalEngine:
         self.supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
         self.last_call_time = None
         
+        # Budget protection: Track daily requests
+        self.daily_requests = 0
+        self.request_date = datetime.now().date()
+        
     # =========================================================================
     # DATA FETCHING
     # =========================================================================
     
     def _fetch_yahoo_data(self, ticker: str) -> Dict:
         """Fetch insider and institutional data from Yahoo Finance."""
+        print(f"DEBUG: Fetching Yahoo data for {ticker}...", flush=True)
         try:
             stock = yf.Ticker(ticker)
             
             # Insider Transactions
             insider_text = ""
             try:
+                print("DEBUG: Getting insider_transactions...", flush=True)
                 df = stock.insider_transactions
                 if df is not None and not df.empty:
                     cols = [c for c in ['Start Date', 'Transaction', 'Insider', 'Shares', 'Value', 'Text'] 
@@ -103,12 +111,27 @@ class AISignalEngine:
             elapsed = (datetime.now() - self.last_call_time).total_seconds()
             if elapsed < self.MIN_DELAY_SECONDS:
                 wait_time = self.MIN_DELAY_SECONDS - elapsed
+                print(f"    [Rate Limit] Waiting {wait_time:.1f}s...", flush=True)
                 time.sleep(wait_time)
         self.last_call_time = datetime.now()
     
     def _call_gemini(self, prompt: str) -> Tuple[int, str]:
         """Call Gemini API via v1 REST endpoint with rate limit handling. Returns (score, reason)."""
+        
+        # BUDGET PROTECTION: Reset counter if new day
+        today = datetime.now().date()
+        if today != self.request_date:
+            self.request_date = today
+            self.daily_requests = 0
+        
+        # BUDGET PROTECTION: Check daily limit
+        if self.daily_requests >= self.DAILY_REQUEST_LIMIT:
+            print(f"    [BUDGET] Daily limit reached ({self.DAILY_REQUEST_LIMIT} requests). Skipping.", flush=True)
+            return 0, 'BUDGET_LIMIT_REACHED'
+        
         self._wait_for_rate_limit()
+        self.daily_requests += 1
+        print(f"    [API] Calling Gemini... (Request #{self.daily_requests}/{self.DAILY_REQUEST_LIMIT})", flush=True)
         
         try:
             payload = {
