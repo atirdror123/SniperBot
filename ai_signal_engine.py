@@ -174,14 +174,16 @@ class AISignalEngine:
         if not insider_text:
             return 0, 'No insider data'
         
-        prompt = f"""Analyze {ticker} INSIDER TRANSACTIONS and score sentiment.
+        prompt = f"""Analyze {ticker} INSIDER TRANSACTIONS and provide a PRECISE sentiment score.
 
-SCALE:
--100 = Heavy Insider Selling (Panic)
--50 = Moderate Selling
-0 = Neutral (Gifts, Options, Mixed)
-+50 = Moderate Buying
-+100 = Heavy Insider Buying (Confidence)
+SCORING RULES:
+- Range: -100 (Strongest Selling) to +100 (Strongest Buying)
+- DO NOT ROUND to nearest 10. Use exact integers (e.g. 87, -42, 12).
+- CRITERIA:
+  * CEO/CFO adds more weight than Directors.
+  * "Open Market Purchase" >> "Grant" or "Option Exercise".
+  * Cluster buys (multiple people) >> Single buyer.
+  * Size matters: >$1M is significant.
 
 DATA:
 {insider_text[:2500]}
@@ -196,12 +198,15 @@ Return JSON: {{ "score": <integer -100 to +100>, "reason": "<brief reasoning>" }
         if not combined.strip():
             return 50, 'No institutional data'  # Default to neutral
         
-        prompt = f"""Analyze {ticker} INSTITUTIONAL OWNERSHIP and score quality.
+        prompt = f"""Analyze {ticker} INSTITUTIONAL OWNERSHIP and provide a PRECISE quality score.
 
-SCALE:
-0 = Poor (Unknown funds, decreasing positions)
-50 = Average
-100 = Excellent (Top funds like Vanguard/Blackrock, increasing positions)
+SCORING RULES:
+- Range: 0 (Terrible) to 100 (Perfect)
+- DO NOT ROUND. Use exact integers (e.g. 93, 44).
+- CRITERIA:
+  * Presence of top tier funds (Blackrock, Vanguard, Renaissance) is bullish.
+  * Increasing positions (Green) >> Decreasing positions (Red).
+  * New positions are a strong signal.
 
 DATA:
 {combined[:2500]}
@@ -212,12 +217,15 @@ Return JSON: {{ "score": <integer 0 to 100>, "reason": "<brief reasoning>" }}"""
     
     def score_oracle(self, ticker: str, insider_text: str, inst_text: str) -> Tuple[int, str]:
         """ORACLE Lens: Synthesize overall prediction."""
-        prompt = f"""Synthesize a FORECAST for {ticker} based on insider and institutional data.
+        prompt = f"""Synthesize a PRECISE FORECAST for {ticker} based on the data.
 
-SCALE:
--100 = Strong Bearish (Expect decline)
-0 = Neutral
-+100 = Strong Bullish (Expect growth)
+SCORING RULES:
+- Range: -100 (Strong Bearish) to +100 (Strong Bullish)
+- DO NOT ROUND. Use exact integers (e.g. 78, -22).
+- LOGIC:
+  * If Insiders AND Institutions are buying -> Very High Score (>80).
+  * If Insiders selling but Institutions buying -> Mixed (near 0).
+  * Look for CONVICTION signals (large amounts, recent dates).
 
 INSIDER DATA:
 {insider_text[:1500]}
