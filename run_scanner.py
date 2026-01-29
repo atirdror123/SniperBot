@@ -7,6 +7,8 @@ import yfinance as yf
 from dotenv import load_dotenv
 from supabase import create_client, Client
 from scanner_logic import SniperScorer
+from ai_signal_engine import AISignalEngine
+from tournament_ai import run_tournament
 from io import StringIO
 
 # Load environment variables
@@ -14,7 +16,8 @@ load_dotenv()
 
 # Configuration
 BATCH_SIZE = 300
-SCORE_THRESHOLD = 75
+TECH_PREFILTER_THRESHOLD = 70  # Technical score to qualify for AI evaluation
+AI_SCORE_THRESHOLD = 75        # AI score to save to database
 MIN_PRICE = 2.0
 MIN_DOLLAR_VOLUME = 5_000_000
 
@@ -99,6 +102,7 @@ def run_scanner():
     
     supabase: Client = create_client(url, key)
     scorer = SniperScorer()
+    ai_engine = AISignalEngine()  # NEW: Initialize AI engine
     
     # 1. Universe
     tickers = get_all_tickers()
@@ -111,7 +115,7 @@ def run_scanner():
     
     # 2. Batching
     total_survivors = 0
-    all_qualified_stocks = []  # Store all stocks that pass threshold
+    all_qualified_stocks = []  # Store all stocks that pass AI threshold
     
     for i in range(0, total_tickers, BATCH_SIZE):
         batch = tickers[i:i + BATCH_SIZE]
@@ -124,8 +128,6 @@ def run_scanner():
         survivors = []
         try:
             # Download data for batch
-            # group_by='ticker' ensures we get a MultiIndex with Ticker as top level or second level depending on auto_adjust
-            # auto_adjust=True simplifies columns to Open, High, Low, Close, Volume
             data = yf.download(batch, period="5d", interval="1d", group_by='ticker', progress=False, threads=True)
             
             if data.empty:
@@ -165,59 +167,103 @@ def run_scanner():
         print(f"  Survivors: {len(survivors)}")
         total_survivors += len(survivors)
         
-        # 4. Deep Sniper Analysis - collect all qualified stocks
+        # 4. TWO-STAGE SCORING: Technical Pre-filter → AI Final Score
         for ticker, fast_close in survivors:
             try:
-                result = scorer.analyze_stock(ticker)
-                score = result.get('final_score', 0)
+                # STAGE 1: Technical Pre-filter
+                tech_result = scorer.analyze_stock(ticker)
+                tech_score = tech_result.get('final_score', 0)
                 
-                if score > SCORE_THRESHOLD:
-                    # Store qualified stock with all details
+                print(f"    {ticker}: Tech Score = {tech_score}", end="")
+                
+                # Only proceed to AI if technical score passes
+                if tech_score < TECH_PREFILTER_THRESHOLD:
+                    print(" → Rejected (Tech)")
+                    continue
+                
+                # STAGE 2: AI Final Scoring
+                print(" → AI Scoring...", end="", flush=True)
+                ai_result = ai_engine.score_stock(ticker)
+                ai_final_score = ai_result.get('final_score', 0)
+                
+                print(f" AI Score = {ai_final_score}", end="")
+                
+                # Check if AI score passes threshold
+                if ai_final_score > AI_SCORE_THRESHOLD:
+                    # Store qualified stock with BOTH tech and AI details
                     all_qualified_stocks.append({
                         'ticker': ticker,
                         'entry_price': fast_close,
-                        'score': score,
-                        'details': result['details'],
-                        'raw_features': result.get('raw_features', {}) # Capture raw features
+                        'ai_score': ai_final_score,
+                        'tech_score': tech_score,
+                        'ai_details': ai_result,
+                        'tech_details': tech_result.get('details', ''),
+                        'raw_features': tech_result.get('raw_features', {})
                     })
-                    print(f"    >>> QUALIFIED: {ticker} (Score: {score})")
+                    print(f" → ✅ QUALIFIED")
+                else:
+                    print(f" → Rejected (AI)")
                         
             except Exception as e:
                 print(f"    Error analyzing {ticker}: {e}")
                 continue
         
-        print(f"  Batch Summary: {len(batch)} scanned -> {len(survivors)} survivors -> {len(all_qualified_stocks)} total qualified so far")
+        print(f"  Batch Summary: {len(batch)} scanned → {len(survivors)} survivors → {len(all_qualified_stocks)} total qualified so far")
         
         # Sleep to be nice to API
         time.sleep(1)
 
-    # 5. Select Top 10 Stocks by Score
+    # 5. Tournament Selection: Top 10 → Top 3
     print("\n" + "="*60)
-    print("FILTERING TOP 10 STOCKS")
+    print("TOURNAMENT SELECTION: TOP 10 → TOP 3")
     print("="*60)
     
     if not all_qualified_stocks:
-        print("No stocks qualified (score > 75). Nothing to save.")
+        print("No stocks qualified (AI score > 75). Nothing to save.")
+        total_saved = 0
     else:
-        # Sort by score descending and take top 10
-        all_qualified_stocks.sort(key=lambda x: x['score'], reverse=True)
-        top_10 = all_qualified_stocks[:10]
+        # Sort by AI score descending and take top 10 for tournament
+        all_qualified_stocks.sort(key=lambda x: x['ai_score'], reverse=True)
+        top_10_candidates = all_qualified_stocks[:10]
         
         print(f"Total Qualified: {len(all_qualified_stocks)}")
+        print(f"Top 10 Candidates for Tournament:")
+        for i, stock in enumerate(top_10_candidates, 1):
+            print(f"  {i}. {stock['ticker']} - AI Score: {stock['ai_score']}")
+        
+        # Run Tournament AI to select top 3
+        print("\n🤖 Running Tournament AI...")
+        tournament_candidates = [
+            {
+                'ticker': s['ticker'],
+                'ai_score': s['ai_score'],
+                'tech_score': s['tech_score'],
+                'price': s['entry_price'],
+                'hunter': s['ai_details'].get('hunter', 0),
+                'quant': s['ai_details'].get('quant', 0),
+                'oracle': s['ai_details'].get('oracle', 0)
+            }
+            for s in top_10_candidates
+        ]
+        
+        tournament_result = run_tournament(tournament_candidates)
+        top_3_tickers = [pick['ticker'] for pick in tournament_result.get('top_3', [])]
+        
+        # Filter to get full details for top 3
+        top_3_stocks = [s for s in top_10_candidates if s['ticker'] in top_3_tickers]
         
         # CLEANUP: Remove today's existing signals before saving new ones
-        print("Cleaning up previous signals for today...")
+        print("\nCleaning up previous signals for today...")
         cleanup_todays_signals(supabase)
         
         # VERIFY CLEANUP (SAFEGUARD)
         try:
-            # Check if any OPEN signals remain
             existing = supabase.table('sniper_signals').select('ticker', count='exact').eq('status', 'OPEN').execute()
             count = existing.count if existing.count is not None else len(existing.data)
             
             if count > 0:
                 print(f"CRITICAL ERROR: Cleanup failed. Found {count} 'OPEN' signals still in DB.")
-                print("Aborting save to prevent exceeding the 10-stock limit.")
+                print("Aborting save to prevent exceeding the stock limit.")
                 return
             else:
                 print("  Cleanup verified. 0 OPEN signals remaining.")
@@ -225,43 +271,71 @@ def run_scanner():
             print(f"Error verifying cleanup: {e}. Aborting for safety.")
             return
         
-        print(f"Saving Top 10 Highest Scoring Stocks:")
+        print(f"\nSaving Top 3 Tournament Winners:")
         print("-" * 60)
         
-        # Prepare batch data
+        # Prepare batch data with AI scoring details
         signals_data = []
-        for stock in top_10:
+        for stock in top_3_stocks:
+            ai_details = stock['ai_details']
+            
+            # Format AI reasons
+            ai_reasons = f"""🎯 AI COMPOSITE SCORE: {stock['ai_score']}/100
+
+HUNTER (Insider Sentiment): {ai_details['hunter']}/100
+{ai_details['hunter_reason']}
+
+QUANT (Institutional Quality): {ai_details['quant']}/100
+{ai_details['quant_reason']}
+
+ORACLE (AI Synthesis): {ai_details['oracle']}/100
+{ai_details['oracle_reason']}
+
+Technical Pre-filter Score: {stock['tech_score']}/100
+{stock['tech_details']}
+"""
+            
             signals_data.append({
                 'ticker': stock['ticker'],
                 'entry_price': stock['entry_price'],
-                'confidence_score': stock['score'],
-                'reasons': stock['details'],
+                'confidence_score': stock['ai_score'],  # AI final score
+                'reasons': ai_reasons,
                 'status': 'OPEN',
-                'raw_features': stock['raw_features']
+                'raw_features': {
+                    'tech_features': stock['raw_features'],
+                    'ai_scores': {
+                        'hunter': ai_details['hunter'],
+                        'quant': ai_details['quant'],
+                        'oracle': ai_details['oracle'],
+                        'final': stock['ai_score']
+                    },
+                    'tech_score': stock['tech_score'],
+                    'tournament_rank': top_3_tickers.index(stock['ticker']) + 1
+                }
             })
-            print(f"  Preparing: {stock['ticker']} - Score: {stock['score']}")
+            print(f"  Preparing: {stock['ticker']} - AI Score: {stock['ai_score']} (Tournament Rank: {top_3_tickers.index(stock['ticker']) + 1})")
 
         # Batch Insert
         if signals_data:
             try:
                 supabase.table('sniper_signals').insert(signals_data).execute()
                 total_saved = len(signals_data)
-                print(f"\nSuccessfully batch inserted {total_saved} stocks.")
+                print(f"\n✅ Successfully saved {total_saved} tournament winners to database.")
             except Exception as e:
-                print(f"\nCRITICAL ERROR: Batch insert failed: {e}")
+                print(f"\n❌ CRITICAL ERROR: Batch insert failed: {e}")
                 total_saved = 0
         else:
             total_saved = 0
         
-        if len(all_qualified_stocks) > 10:
-            print(f"\nNote: {len(all_qualified_stocks) - 10} additional qualified stocks were not saved (only top 10 saved)")
+        if len(all_qualified_stocks) > 3:
+            print(f"\n📊 Note: {len(all_qualified_stocks) - 3} additional qualified stocks were not selected by tournament")
 
     print("\n" + "="*60)
     print("SCAN COMPLETE")
     print(f"Total Scanned: {total_tickers}")
     print(f"Total Survivors: {total_survivors}")
-    print(f"Total Qualified: {len(all_qualified_stocks)}")
-    print(f"Total Saved: {total_saved if all_qualified_stocks else 0}")
+    print(f"Total Qualified (AI > 75): {len(all_qualified_stocks)}")
+    print(f"Tournament Winners Saved: {total_saved if all_qualified_stocks else 0}")
     print("="*60)
 
 if __name__ == "__main__":

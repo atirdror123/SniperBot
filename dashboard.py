@@ -38,16 +38,25 @@ def fetch_home_data():
         p_res = supabase.table("portfolio_config").select("*").eq("id", "SNIPER").execute()
         portfolio = p_res.data[0] if p_res.data else None
         
-        # Open Positions
-        pos_res = supabase.table("paper_positions").select("*").eq("portfolio", "SNIPER").eq("status", "OPEN").execute()
+        # Open Positions - READ FROM sniper_signals (where run_scanner.py writes!)
+        # The scanner saves signals with status='OPEN', so we query that
+        pos_res = supabase.table("sniper_signals").select("*").eq("status", "OPEN").order("created_at", desc=True).execute()
         open_df = pd.DataFrame(pos_res.data) if pos_res.data else pd.DataFrame()
+        
+        # Map column names: sniper_signals uses different names than paper_positions
+        if not open_df.empty:
+            # Ensure we have required columns for dashboard display
+            if 'confidence_score' in open_df.columns and 'quantity' not in open_df.columns:
+                # Default quantity = 1 for now (signal, not position tracking)
+                open_df['quantity'] = 1
         
         # Equity History
         eq_res = supabase.table("equity_history").select("*").eq("portfolio", "SNIPER").order("recorded_at").execute()
         equity_df = pd.DataFrame(eq_res.data) if eq_res.data else pd.DataFrame()
         
         return portfolio, open_df, equity_df
-    except:
+    except Exception as e:
+        print(f"Dashboard data fetch error: {e}")
         return None, pd.DataFrame(), pd.DataFrame()
 
 portfolio, open_df, equity_df = fetch_home_data()
@@ -191,7 +200,77 @@ if not open_df.empty:
 else:
     st.info("No active positions. Waiting for next scan...")
 
-# --- 4. RECENT SIGNALS (Today's Candidates) ---
+# --- 4. AI LENS BREAKDOWN ---
+st.markdown("### 🔬 AI Lens Analysis")
+
+if not open_df.empty:
+    # Check if we have AI scores in raw_features
+    has_ai_scores = False
+    for _, row in open_df.iterrows():
+        raw_features = row.get('raw_features', {})
+        if isinstance(raw_features, dict) and 'ai_scores' in raw_features:
+            has_ai_scores = True
+            break
+    
+    if has_ai_scores:
+        for _, row in open_df.iterrows():
+            ticker = row['ticker']
+            raw_features = row.get('raw_features', {})
+            ai_scores = raw_features.get('ai_scores', {}) if isinstance(raw_features, dict) else {}
+            
+            if ai_scores:
+                with st.expander(f"📊 {ticker} - AI Scoring Breakdown"):
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        hunter = ai_scores.get('hunter', 0)
+                        st.metric("🎯 HUNTER", f"{hunter}/100", 
+                                 help="Insider trading sentiment analysis")
+                    
+                    with col2:
+                        quant = ai_scores.get('quant', 0)
+                        st.metric("📊 QUANT", f"{quant}/100",
+                                 help="Institutional ownership quality")
+                    
+                    with col3:
+                        oracle = ai_scores.get('oracle', 0)
+                        st.metric("🔮 ORACLE", f"{oracle}/100",
+                                 help="AI synthesis and prediction")
+                    
+                    with col4:
+                        final = ai_scores.get('final', 0)
+                        st.metric("⭐ FINAL", f"{final}/100",
+                                 help="Weighted composite score")
+                    
+                    # Visual breakdown
+                    st.markdown("**Score Composition:**")
+                    fig = go.Figure(data=[
+                        go.Bar(
+                            x=['Hunter (40%)', 'Quant (30%)', 'Oracle (30%)'],
+                            y=[hunter * 0.4, quant * 0.3, oracle * 0.3],
+                            marker_color=['#FF6B6B', '#4ECDC4', '#45B7D1'],
+                            text=[f"{hunter * 0.4:.1f}", f"{quant * 0.3:.1f}", f"{oracle * 0.3:.1f}"],
+                            textposition='auto'
+                        )
+                    ])
+                    fig.update_layout(
+                        showlegend=False,
+                        height=200,
+                        margin=dict(l=0, r=0, t=0, b=0),
+                        yaxis_title="Contribution to Final Score"
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Tournament rank if available
+                    tournament_rank = raw_features.get('tournament_rank')
+                    if tournament_rank:
+                        st.info(f"🏆 Tournament Rank: #{tournament_rank}")
+    else:
+        st.info("💡 AI scoring data not available for current positions. Run a new scan to see AI lens analysis.")
+else:
+    st.info("No positions to analyze.")
+
+# --- 5. RECENT SIGNALS (Today's Candidates) ---
 st.markdown("### 📡 Latest Signals (Paper Trading Queue)")
 # Fetch recent paper positions that are PENDING or OPEN created in last 24h
 # For now just show "No new signals" visual placeholder if empty

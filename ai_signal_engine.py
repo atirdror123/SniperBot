@@ -55,6 +55,10 @@ class AISignalEngine:
         self.daily_requests = 0
         self.request_date = datetime.now().date()
         
+        # Load dynamic weights from database (connected to self-learning)
+        self.weights = self._load_dynamic_weights()
+        print(f"AI Engine initialized with weights: {self.weights}")
+        
     # =========================================================================
     # DATA FETCHING
     # =========================================================================
@@ -100,6 +104,56 @@ class AISignalEngine:
             }
         except Exception as e:
             return {'insider': '', 'institutional': '', 'holders': '', 'has_data': False, 'error': str(e)}
+    
+    def _load_dynamic_weights(self) -> dict:
+        """Load lens weights from database (updated by self-learning system)."""
+        try:
+            # Detect current market regime
+            regime = self._detect_regime()
+            
+            response = self.supabase.table('lens_weights')\
+                .select('*')\
+                .eq('regime', regime)\
+                .execute()
+            
+            if response.data:
+                row = response.data[0]
+                weights = {
+                    'hunter': row['w_hunter'],
+                    'quant': row['w_quant'],
+                    'oracle': row['w_oracle']
+                }
+                print(f"Loaded {regime} regime weights from database")
+                return weights
+        except Exception as e:
+            print(f"Failed to load weights from DB: {e}")
+        
+        # Fallback to defaults
+        return {'hunter': 0.4, 'quant': 0.3, 'oracle': 0.3}
+    
+    def _detect_regime(self) -> str:
+        """Simple regime detection using SPY trend."""
+        try:
+            spy = yf.Ticker('SPY')
+            hist = spy.history(period='3mo')
+            
+            if hist.empty:
+                return 'BULL'  # Default
+            
+            current = hist['Close'].iloc[-1]
+            sma50 = hist['Close'].rolling(50).mean().iloc[-1]
+            
+            if pd.isna(sma50):
+                return 'BULL'
+            
+            if current > sma50 * 1.02:
+                return 'BULL'
+            elif current < sma50 * 0.98:
+                return 'BEAR'
+            else:
+                return 'CHOP'
+        except:
+            return 'BULL'  # Default fallback
     
     # =========================================================================
     # AI SCORING (Individual Lenses)
@@ -258,11 +312,17 @@ Return JSON: {{ "score": <integer -100 to +100>, "reason": "<brief reasoning>" }
         quant, q_reason = self.score_quant(ticker, data['institutional'], data['holders'])
         oracle, o_reason = self.score_oracle(ticker, data['insider'], data['institutional'])
         
+        # Calculate FINAL COMPOSITE SCORE (Weighted Average from Database)
+        # Weights are loaded from lens_weights table and updated by self-learning
+        w = self.weights
+        final_score = int((hunter * w['hunter']) + (quant * w['quant']) + (oracle * w['oracle']))
+        
         return {
             'ticker': ticker,
             'hunter': hunter, 'hunter_reason': h_reason,
             'quant': quant, 'quant_reason': q_reason,
             'oracle': oracle, 'oracle_reason': o_reason,
+            'final_score': final_score,
             'success': 'RATE_LIMITED' not in [h_reason, q_reason, o_reason]
         }
     

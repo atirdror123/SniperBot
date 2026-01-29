@@ -1,0 +1,57 @@
+﻿============================================================
+GEMINI API DIAGNOSTIC
+============================================================
+
+1. CHECKING API KEY...
+python : Traceback 
+(most recent call 
+last):
+At line:1 char:1
++ python 
+diagnose_api.py 2>&1 
+| Out-File -FilePath 
+diagnostic_output.tx 
+...
++ ~~~~~~~~~~~~~~~~~~~
+~~~~~~~~
+    + CategoryInfo   
+           : NotSpe  
+  cified: (Traceba   
+ ck (most recent     
+call last)::Stri    
+ng) [], RemoteEx    
+ception
+    + FullyQualified 
+   ErrorId : Native  
+  CommandError
+ 
+  File "C:\Users\USER
+\Desktop\StockBot\dia
+gnose_api.py", line 
+20, in <module>
+    print(f"   
+\u2713 API Key 
+present (starts 
+with: 
+{api_key[:10]}...)")
+  File "C:\Users\USER
+\AppData\Local\Progra
+ms\Python\Python312\L
+ib\encodings\cp1255.p
+y", line 19, in 
+encode
+    return codecs.cha
+rmap_encode(input,sel
+f.errors,encoding_tab
+le)[0]
+           ^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^
+^^^
+UnicodeEncodeError: 
+'charmap' codec 
+can't encode 
+character '\u2713' 
+in position 3: 
+character maps to 
+<undefined>

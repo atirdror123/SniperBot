@@ -1,0 +1,16 @@
+YAHOO FINANCE BACKTEST - SIGNAL ANALYSIS
+============================================================
+             signal  category  correlation   winner_avg    loser_avg         diff
+0       momentum_1m  CHARTIST     0.338364    52.324219    43.220803     9.103416
+1          inst_pct     QUANT     0.148378  2135.000000  3894.200000 -1759.200000
+2               rsi  CHARTIST     0.095098    63.499818    57.060095     6.439722
+3        volatility  CHARTIST     0.068421    50.359456    63.781201   -13.421746
+4  net_insider_buys    HUNTER    -0.017531   -49.333333   -50.300000     0.966667
+5     insider_score    HUNTER    -0.083360     0.000000    11.566667   -11.566667
+6        inst_score     QUANT          NaN    85.000000    85.000000     0.000000
+
+
+Total stocks: 33
+Winners: 3
+Win Rate: 9.1%
+Avg Return: -2.2%

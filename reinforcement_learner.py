@@ -61,6 +61,9 @@ class SentientBrain:
         # Outcome thresholds
         self.win_threshold = 0.10       # +10% = WIN
         self.loss_threshold = -0.05     # -5% = LOSS
+        
+        # Period weights (for nightly review)
+        self.PERIOD_WEIGHTS = PERIOD_WEIGHTS
 
     def get_weights(self, regime: MarketRegime) -> Dict[Lens, float]:
         """Retrieves dynamic weights for the current market regime."""

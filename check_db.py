@@ -1,23 +1,60 @@
+"""Quick check of what's in the paper_positions table."""
 import os
 from dotenv import load_dotenv
 from supabase import create_client
 
 load_dotenv()
 
-def check_recent_signals():
-    url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_KEY")
-    try:
-        supabase = create_client(url, key)
-        # Fetch last 5 signals
-        response = supabase.table("sniper_signals").select("*").order("created_at", desc=True).limit(5).execute()
-        
-        print(f"Total signals found: {len(response.data)}")
-        for signal in response.data:
-            print(f"- {signal['ticker']} | {signal['created_at']} | Score: {signal['confidence_score']}")
-            
-    except Exception as e:
-        print(f"Error connecting to DB: {e}")
+supabase = create_client(
+    os.getenv('SUPABASE_URL'),
+    os.getenv('SUPABASE_KEY')
+)
 
-if __name__ == "__main__":
-    check_recent_signals()
+# Check what tables exist and their structure
+print("Checking paper_positions table...")
+try:
+    response = supabase.table('paper_positions').select('*').limit(5).execute()
+    print(f"Found {len(response.data)} rows")
+    if response.data:
+        print(f"Columns: {list(response.data[0].keys())}")
+        for row in response.data:
+            ticker = row.get('ticker', row.get('symbol', 'N/A'))
+            print(f"  {ticker}")
+    else:
+        print("  (empty table)")
+except Exception as e:
+    print(f"Error: {e}")
+
+print("\n" + "="*50)
+print("Checking stock_picks table...")
+try:
+    response = supabase.table('stock_picks').select('*').limit(5).execute()
+    print(f"Found {len(response.data)} rows")
+    if response.data:
+        print(f"Columns: {list(response.data[0].keys())}")
+        for row in response.data:
+            ticker = row.get('ticker', row.get('symbol', 'N/A'))
+            print(f"  {ticker}")
+    else:
+        print("  (empty table)")
+except Exception as e:
+    print(f"Error: {e}")
+
+print("\n" + "="*50)
+print("Checking legacy_stocks table...")
+try:
+    response = supabase.table('legacy_stocks').select('*').limit(5).execute()
+    print(f"Found {len(response.data)} rows")
+    if response.data:
+        print(f"Columns: {list(response.data[0].keys())}")
+        for row in response.data:
+            ticker = row.get('ticker', row.get('symbol', 'N/A'))
+            print(f"  {ticker}")
+    else:
+        print("  (empty table)")
+except Exception as e:
+    print(f"Error: {e}")
+
+# Write to file for complete output
+with open('db_check_output.txt', 'w') as f:
+    f.write("Database check complete - see console output")

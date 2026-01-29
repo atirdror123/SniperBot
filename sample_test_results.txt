@@ -1,0 +1,4 @@
+Sample Size: 100
+Passed: 1
+Pass Rate: 1.0%
+Passed Stocks: UPS

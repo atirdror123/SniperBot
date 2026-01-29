@@ -31,6 +31,6 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         
-    - name: Run Sniper Scanner V2.0
-      run: python run_sniper_scan.py
+    - name: Run Sniper Scanner V2.0 (Alpha AI)
+      run: python run_scanner.py
 

@@ -1,0 +1,44 @@
+============================================================
+TESTING YAHOO FINANCE FREE DATA
+============================================================
+
+Testing: AAPL
+
+--- INSTITUTIONAL HOLDERS ---
+SUCCESS: Found 10 institutional holders
+  Date Reported                    Holder  pctHeld      Shares         Value  pctChange
+0    2025-09-30        Vanguard Group Inc   0.0952  1399427162  357427696571    -0.0117
+1    2025-09-30            Blackrock Inc.   0.0780  1146332274  292784730300    -0.0022
+2    2025-09-30  State Street Corporation   0.0407   597501113  152607761459    -0.0062
+
+--- MAJOR HOLDERS ---
+SUCCESS: Major holders data
+Breakdown                          Value
+insidersPercentHeld              0.01702
+institutionsPercentHeld          0.64814
+institutionsFloatPercentHeld     0.65937
+institutionsCount             7094.00000
+
+--- INSIDER TRANSACTIONS ---
+SUCCESS: Found 76 insider transactions
+   Shares      Value URL                                      Text            Insider                 Position Transaction Start Date Ownership
+0    3750        0.0           Stock Gift at price 0.00 per share.  ADAMS KATHERINE L          General Counsel             2025-11-12         D
+1    3752  1017655.0               Sale at price 271.23 per share.  KONDO CHRISTOPHER                  Officer             2025-11-07         D
+2    4199  1038787.0      Sale at price 245.89 - 248.73 per share.       PAREKH KEVAN  Chief Financial Officer             2025-10-16         D
+3    7371        NaN                                                KONDO CHRISTOPHER                  Officer             2025-10-15         D
+4   16457        NaN                                                     PAREKH KEVAN  Chief Financial Officer             2025-10-15         D
+
+--- INSIDER PURCHASES SUMMARY ---
+SUCCESS: Insider purchases summary
+       Insider Purchases Last 6m       Shares  Trans
+0                      Purchases     582428.0      8
+1                          Sales     352873.0      7
+2    Net Shares Purchased (Sold)     229555.0     15
+3      Total Insider Shares Held  251493520.0   <NA>
+4  % Net Shares Purchased (Sold)        0.001   <NA>
+5                   % Buy Shares        0.002   <NA>
+6                  % Sell Shares        0.001   <NA>
+
+============================================================
+CONCLUSION: Yahoo Finance provides FREE insider/institutional data!
+============================================================
