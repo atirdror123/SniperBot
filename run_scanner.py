@@ -178,7 +178,8 @@ def run_scanner():
                 
                 # Only proceed to AI if technical score passes
                 if tech_score < TECH_PREFILTER_THRESHOLD:
-                    print(" → Rejected (Tech)")
+                    reason = tech_result.get('details', 'Low Score')
+                    print(f" → Rejected ({reason})")
                     continue
                 
                 # STAGE 2: AI Final Scoring

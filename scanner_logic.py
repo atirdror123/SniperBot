@@ -110,6 +110,9 @@ class SniperScorer:
         ai_reason = "No AI analysis"
         is_backtest = data is not None
         
+        # Initialize Ticker object for fundamental/sector data
+        stock = yf.Ticker(ticker)
+        
         try:
             if is_backtest:
                 hist = data
