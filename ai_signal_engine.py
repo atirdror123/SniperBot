@@ -215,7 +215,11 @@ class AISignalEngine:
             end = text.rfind('}') + 1
             if start != -1 and end > start:
                 result = json.loads(text[start:end])
-                return result.get('score', 0), result.get('reason', 'Parsed')
+                raw_score = result.get('score', 0)
+                # CRITICAL FIX: Clamp score to valid range [-100, 100]
+                # Gemini sometimes hallucinates scores > 100 despite prompt constraints
+                clamped_score = max(-100, min(100, int(raw_score)))
+                return clamped_score, result.get('reason', 'Parsed')
             return 0, 'No JSON found'
         except Exception as e:
             error_str = str(e)
@@ -315,7 +319,35 @@ Return JSON: {{ "score": <integer -100 to +100>, "reason": "<brief reasoning>" }
         # Calculate FINAL COMPOSITE SCORE (Weighted Average from Database)
         # Weights are loaded from lens_weights table and updated by self-learning
         w = self.weights
-        final_score = int((hunter * w['hunter']) + (quant * w['quant']) + (oracle * w['oracle']))
+        
+        # NORMALIZE SCORES TO 0-100 SCALE:
+        # HUNTER: -100 to +100 → 0 to 100 (shift by +100, then divide by 2)
+        # QUANT: Already 0-100
+        # ORACLE: -100 to +100 → 0 to 100 (shift by +100, then divide by 2)
+        hunter_normalized = (hunter + 100) / 2  # -100→0, 0→50, +100→100
+        quant_normalized = quant  # Already 0-100
+        oracle_normalized = (oracle + 100) / 2  # -100→0, 0→50, +100→100
+        
+        # Clamp all to 0-100 before weighting
+        hunter_normalized = max(0, min(100, hunter_normalized))
+        quant_normalized = max(0, min(100, quant_normalized))
+        oracle_normalized = max(0, min(100, oracle_normalized))
+        
+        # FIX: Normalize weights to ensure they sum to 1.0
+        # Database weights may be > 1 (e.g., 1.2 for bias), so we normalize
+        total_weight = w['hunter'] + w['quant'] + w['oracle']
+        if total_weight == 0:
+            total_weight = 1.0  # Prevent division by zero
+        
+        # Weighted average with NORMALIZED weights (guarantees 0-100)
+        raw_score = (
+            (hunter_normalized * w['hunter']) + 
+            (quant_normalized * w['quant']) + 
+            (oracle_normalized * w['oracle'])
+        ) / total_weight
+        
+        # FINAL CAP: Ensure 0-100 regardless of any edge cases
+        final_score = round(max(0, min(100, raw_score)), 1)  # Keep 1 decimal
         
         return {
             'ticker': ticker,

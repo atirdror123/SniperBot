@@ -52,8 +52,8 @@ def check_positions():
     
     supabase = get_supabase()
     
-    # Get all open SNIPER positions
-    response = supabase.table('paper_positions').select('*').eq('status', 'OPEN').eq('portfolio', 'SNIPER').execute()
+    # Get all open SNIPER trades from the V2 table
+    response = supabase.table('sniper_trades').select('*').eq('status', 'OPEN').execute()
     positions = response.data
     
     if not positions:
@@ -126,7 +126,7 @@ def execute_exit(supabase, position: dict, exit_price: float, reason: str, qty: 
     
     if qty >= total_qty:
         # Full exit - close position
-        supabase.table('paper_positions').update({
+        supabase.table('sniper_trades').update({
             'status': 'CLOSED',
             'exit_price': exit_price,
             'exit_date': datetime.now().isoformat(),
@@ -140,14 +140,13 @@ def execute_exit(supabase, position: dict, exit_price: float, reason: str, qty: 
         # Partial exit - reduce position
         remaining_qty = total_qty - qty
         
-        supabase.table('paper_positions').update({
+        supabase.table('sniper_trades').update({
             'quantity': remaining_qty,
             'cost_basis': remaining_qty * entry_price
         }).eq('id', pos_id).execute()
         
         # Log the partial sale as a separate closed position
-        supabase.table('paper_positions').insert({
-            'portfolio': 'SNIPER',
+        supabase.table('sniper_trades').insert({
             'ticker': ticker,
             'entry_price': entry_price,
             'quantity': qty,
@@ -176,12 +175,12 @@ def update_equity():
     
     starting_capital = config.data[0]['starting_capital']
     
-    # Calculate realized PnL (closed positions)
-    closed = supabase.table('paper_positions').select('pnl').eq('portfolio', 'SNIPER').eq('status', 'CLOSED').execute()
+    # Calculate realized PnL (closed trades in sniper_trades)
+    closed = supabase.table('sniper_trades').select('pnl').eq('status', 'CLOSED').execute()
     realized_pnl = sum(pos.get('pnl', 0) or 0 for pos in closed.data)
     
-    # Calculate unrealized PnL (open positions)
-    open_positions = supabase.table('paper_positions').select('*').eq('portfolio', 'SNIPER').eq('status', 'OPEN').execute()
+    # Calculate unrealized PnL (open trades in sniper_trades)
+    open_positions = supabase.table('sniper_trades').select('*').eq('status', 'OPEN').execute()
     
     unrealized_pnl = 0
     for pos in open_positions.data:
