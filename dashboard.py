@@ -1,6 +1,6 @@
 """
-🎯 SNIPER TERMINAL V3 - Alpaca Integrated Dashboard
-Live Trading Dashboard powered by Alpaca Markets API
+🎯 SNIPER TERMINAL V4 - Unified Dashboard
+Merges Database (source of truth) + Alpaca (live prices) into one view.
 """
 import os
 import pandas as pd
@@ -19,12 +19,11 @@ if not check_password():
     st.stop()
 
 supabase = init_clients()
-STARTING_CAPITAL = 100000  # Reference point for P/L calculation
+STARTING_CAPITAL = 100000
 
 # --- ALPACA INTEGRATION ---
 @st.cache_resource
 def get_alpaca():
-    """Initialize Alpaca client if keys are configured."""
     try:
         if os.getenv("ALPACA_API_KEY") and os.getenv("ALPACA_SECRET_KEY"):
             from alpaca_client import get_alpaca_client
@@ -53,130 +52,184 @@ if st.sidebar.button("🔄 REFRESH"):
     st.rerun()
 
 # --- HEADER ---
-st.title("🎯 Sniper Terminal V3.0")
+st.title("🎯 Sniper Terminal V4.0")
 st.markdown("**Live Trading Dashboard** | Alpaca Paper Trading")
 
-# --- FETCH DATA ---
+# =============================================================================
+# UNIFIED DATA FETCH: DB is source of truth, Alpaca enriches with live prices
+# =============================================================================
 @st.cache_data(ttl=30)
-def fetch_alpaca_data():
-    """Fetch live data from Alpaca or fallback to database."""
+def fetch_unified_data():
+    """
+    UNIFIED STRATEGY:
+    1. Fetch ALL 'OPEN' trades from sniper_trades (DB = source of truth).
+    2. Fetch Alpaca positions for live price enrichment.
+    3. Merge: DB stock gets Alpaca live price if available, otherwise shows entry price.
+    4. Stocks in DB but NOT in Alpaca are shown as "Pending Sync".
+    """
+    # --- Step 1: Database trades ---
+    db_trades = {}
+    if supabase:
+        try:
+            res = supabase.table("sniper_trades").select("*").eq("status", "OPEN").order("created_at", desc=True).execute()
+            for t in (res.data or []):
+                db_trades[t['ticker']] = t
+        except Exception as e:
+            st.error(f"DB Error: {e}")
+
+    # --- Step 2: Alpaca positions & orders ---
+    alpaca_positions = {}
+    alpaca_orders = []
+    account_equity = STARTING_CAPITAL
+    account_cash = STARTING_CAPITAL
+
     if alpaca:
         try:
             account = alpaca.get_account()
-            positions = alpaca.get_positions()
-            orders = alpaca.get_orders(status="open")
-            
-            # Build positions DataFrame
-            pos_data = []
-            for pos in positions:
-                pos_data.append({
-                    'ticker': pos.symbol,
+            account_equity = float(account.equity)
+            account_cash = float(account.cash)
+
+            for pos in alpaca.get_positions():
+                alpaca_positions[pos.symbol] = {
                     'quantity': int(pos.qty),
                     'entry_price': float(pos.avg_entry_price),
                     'current_price': float(pos.current_price),
                     'market_value': float(pos.market_value),
+                    'cost_basis': float(pos.cost_basis),
                     'unrealized_pl': float(pos.unrealized_pl),
                     'unrealized_plpc': float(pos.unrealized_plpc) * 100,
-                    'cost_basis': float(pos.cost_basis)
-                })
-            
-            # Build orders DataFrame
-            order_data = []
-            for o in orders:
-                order_data.append({
+                }
+
+            for o in alpaca.get_orders(status="open"):
+                alpaca_orders.append({
                     'ticker': o.symbol,
                     'side': o.side.value.upper(),
                     'qty': int(o.qty) if o.qty else 0,
                     'status': o.status.value.upper(),
                     'submitted': o.submitted_at.strftime("%Y-%m-%d %H:%M")
                 })
-
-            return {
-                'equity': float(account.equity),
-                'buying_power': float(account.buying_power),
-                'cash': float(account.cash),
-                'positions': pd.DataFrame(pos_data) if pos_data else pd.DataFrame(),
-                'orders': pd.DataFrame(order_data) if order_data else pd.DataFrame()
-            }
         except Exception as e:
             st.error(f"Alpaca Error: {e}")
-    
-    # Fallback to database
-    return fetch_database_fallback()
 
-def fetch_database_fallback():
-    """Fallback to internal database when Alpaca not available."""
-    if not supabase:
-        return {'equity': STARTING_CAPITAL, 'buying_power': STARTING_CAPITAL, 'cash': STARTING_CAPITAL, 'positions': pd.DataFrame(), 'orders': pd.DataFrame()}
-    
-    try:
-        pos_res = supabase.table("sniper_trades").select("*").eq("status", "OPEN").order("created_at", desc=True).execute()
-        open_df = pd.DataFrame(pos_res.data) if pos_res.data else pd.DataFrame()
-        
-        # Calculate equity from positions
-        total_invested = 0
-        if not open_df.empty:
-            total_invested = open_df.get('invested_amount', open_df.get('entry_price', 0)).sum()
-        
-        return {
-            'equity': STARTING_CAPITAL,  # Static fallback
-            'buying_power': STARTING_CAPITAL - total_invested,
-            'cash': STARTING_CAPITAL - total_invested,
-            'positions': open_df,
-            'orders': pd.DataFrame()
-        }
-    except Exception as e:
-        st.error(f"Database Error: {e}")
-        return {'equity': STARTING_CAPITAL, 'buying_power': STARTING_CAPITAL, 'cash': STARTING_CAPITAL, 'positions': pd.DataFrame(), 'orders': pd.DataFrame()}
+    # --- Step 3: Merge (DB is master, Alpaca enriches) ---
+    merged = []
+    all_tickers = set(list(db_trades.keys()) + list(alpaca_positions.keys()))
 
-data = fetch_alpaca_data()
+    for ticker in sorted(all_tickers):
+        db = db_trades.get(ticker)
+        alp = alpaca_positions.get(ticker)
+
+        if alp:
+            # Alpaca has live data — use it
+            entry = alp['entry_price']
+            current = alp['current_price']
+            qty = alp['quantity']
+            invested = alp['cost_basis']
+            value = alp['market_value']
+            pnl_dollar = alp['unrealized_pl']
+            pnl_pct = alp['unrealized_plpc']
+            sync_status = "✅ Live"
+        elif db:
+            # DB only — no live price, show entry as current
+            entry = db.get('entry_price', 0)
+            qty = db.get('quantity', 0)
+            current = entry  # No live price available
+            invested = db.get('invested_amount', entry * qty)
+            value = invested  # Same as invested (no live data)
+            pnl_dollar = 0
+            pnl_pct = 0
+            sync_status = "⏳ Pending"
+        else:
+            continue
+
+        # Get AI rationale from DB (if available)
+        ai_notes = ""
+        ai_score = 0
+        if db:
+            ai_notes = db.get('notes', '')
+            ai_score = db.get('ai_score', 0)
+
+        merged.append({
+            'ticker': ticker,
+            'qty': qty,
+            'entry_price': entry,
+            'current_price': current,
+            'invested': invested,
+            'value': value,
+            'pnl_dollar': pnl_dollar,
+            'pnl_pct': pnl_pct,
+            'sync_status': sync_status,
+            'ai_score': ai_score,
+            'ai_notes': ai_notes,
+        })
+
+    # --- Step 4: Calculate aggregate metrics ---
+    total_invested = sum(r['invested'] for r in merged)
+    total_value = sum(r['value'] for r in merged)
+    active_pnl_dollar = total_value - total_invested
+    active_pnl_pct = (active_pnl_dollar / total_invested * 100) if total_invested > 0 else 0
+
+    return {
+        'positions': pd.DataFrame(merged) if merged else pd.DataFrame(),
+        'orders': pd.DataFrame(alpaca_orders) if alpaca_orders else pd.DataFrame(),
+        'account_equity': account_equity,
+        'account_cash': account_cash,
+        'total_invested': total_invested,
+        'total_value': total_value,
+        'active_pnl_dollar': active_pnl_dollar,
+        'active_pnl_pct': active_pnl_pct,
+    }
+
+data = fetch_unified_data()
 positions_df = data['positions']
 orders_df = data['orders']
 
-# --- HERO METRICS (NEW LAYOUT) ---
+# =============================================================================
+# HERO METRICS — Clear, Understandable, No Confusion
+# =============================================================================
 c1, c2, c3, c4 = st.columns(4)
 
-equity = data['equity']
-pnl_dollar = equity - STARTING_CAPITAL
-pnl_pct = (pnl_dollar / STARTING_CAPITAL) * 100 if STARTING_CAPITAL else 0
+total_invested = data['total_invested']
+total_value = data['total_value']
+active_pnl = data['active_pnl_dollar']
+active_pnl_pct = data['active_pnl_pct']
 
 with c1:
-    delta_class = "delta-pos" if pnl_dollar >= 0 else "delta-neg"
     st.markdown(f"""
     <div class="metric-card">
-        <div class="metric-label">Total Equity</div>
-        <div class="metric-value">${equity:,.2f}</div>
-        <div class="metric-delta {delta_class}">Live from Alpaca</div>
+        <div class="metric-label">Total Invested</div>
+        <div class="metric-value">${total_invested:,.2f}</div>
+        <div class="metric-delta">Cost Basis</div>
     </div>
     """, unsafe_allow_html=True)
 
 with c2:
-    pnl_color = "delta-pos" if pnl_dollar >= 0 else "delta-neg"
+    val_color = "delta-pos" if active_pnl >= 0 else "delta-neg"
     st.markdown(f"""
     <div class="metric-card">
-        <div class="metric-label">Total P/L ($)</div>
-        <div class="metric-value {pnl_color}">${pnl_dollar:+,.2f}</div>
-        <div class="metric-delta">Since Start</div>
+        <div class="metric-label">Current Value</div>
+        <div class="metric-value">${total_value:,.2f}</div>
+        <div class="metric-delta {val_color}">${active_pnl:+,.2f}</div>
     </div>
     """, unsafe_allow_html=True)
 
 with c3:
-    pct_color = "delta-pos" if pnl_pct >= 0 else "delta-neg"
+    pnl_color = "delta-pos" if active_pnl >= 0 else "delta-neg"
     st.markdown(f"""
     <div class="metric-card">
-        <div class="metric-label">Total P/L (%)</div>
-        <div class="metric-value {pct_color}">{pnl_pct:+.2f}%</div>
-        <div class="metric-delta">Overall Return</div>
+        <div class="metric-label">Active P/L</div>
+        <div class="metric-value {pnl_color}">${active_pnl:+,.2f}</div>
+        <div class="metric-delta">Open Positions Only</div>
     </div>
     """, unsafe_allow_html=True)
 
 with c4:
-    buying_power = data['buying_power']
+    pct_color = "delta-pos" if active_pnl_pct >= 0 else "delta-neg"
     st.markdown(f"""
     <div class="metric-card">
-        <div class="metric-label">Buying Power</div>
-        <div class="metric-value">${buying_power:,.2f}</div>
-        <div class="metric-delta">Available Cash</div>
+        <div class="metric-label">Active Return</div>
+        <div class="metric-value {pct_color}">{active_pnl_pct:+.2f}%</div>
+        <div class="metric-delta">Open Positions Only</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -187,64 +240,63 @@ trade_count = len(positions_df) if not positions_df.empty else 0
 st.markdown(f"### 📂 Active Positions ({trade_count})")
 
 if not positions_df.empty:
-    # Build display table
     table_rows = []
-    
     for _, row in positions_df.iterrows():
-        ticker = row['ticker']
-        qty = row.get('quantity', row.get('qty', 1)) or 1
-        entry = row.get('entry_price', row.get('avg_entry_price', 0)) or 0
-        current = row.get('current_price', entry) or entry or 0
-        
-        # P/L from Alpaca or calculate
-        if 'unrealized_pl' in row and row['unrealized_pl'] is not None:
-            pnl_dollar = row['unrealized_pl']
-            pnl_pct = row.get('unrealized_plpc', 0) or 0
-        else:
-            pnl_dollar = (current - entry) * qty if current and entry else 0
-            invested = entry * qty if entry and qty else 0
-            pnl_pct = (pnl_dollar / invested * 100) if invested > 0 else 0
-        
         table_rows.append({
-            'Ticker': ticker,
-            'Qty': qty,
-            'Entry': f"${entry:.2f}",
-            'Current': f"${current:.2f}",
-            'P/L ($)': pnl_dollar,
-            'P/L (%)': pnl_pct
+            'Ticker': row['ticker'],
+            'Status': row['sync_status'],
+            'Qty': row['qty'],
+            'Entry': f"${row['entry_price']:.2f}",
+            'Current': f"${row['current_price']:.2f}",
+            'Invested': row['invested'],
+            'Value': row['value'],
+            'P/L ($)': row['pnl_dollar'],
+            'P/L (%)': row['pnl_pct'],
+            'AI Score': row['ai_score'],
         })
-    
+
     display_df = pd.DataFrame(table_rows)
-    
-    # Format P/L columns with colors
-    def style_pnl(val):
+
+    styler = display_df.style.format({
+        'Invested': "${:,.2f}",
+        'Value': "${:,.2f}",
+        'P/L ($)': "${:+,.2f}",
+        'P/L (%)': "{:+.2f}%"
+    })
+
+    def color_pnl(val):
         if isinstance(val, (int, float)):
             color = '#00873C' if val >= 0 else '#EB0029'
             return f'color: {color}; font-weight: bold'
         return ''
-    
-    # Apply formatting
-    display_df['P/L ($)'] = display_df['P/L ($)'].apply(lambda x: f"${x:+,.2f}")
-    display_df['P/L (%)'] = display_df['P/L (%)'].apply(lambda x: f"{x:+.2f}%")
-    
-    st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+    try:
+        styler.map(color_pnl, subset=['P/L ($)', 'P/L (%)'])
+    except AttributeError:
+        styler.applymap(color_pnl, subset=['P/L ($)', 'P/L (%)'])
+
+    st.dataframe(styler, use_container_width=True, hide_index=True)
+
+    # --- AI INSIGHTS EXPANDER ---
+    st.markdown("### 🧠 AI Analysis (Why Each Stock Was Picked)")
+    for _, row in positions_df.iterrows():
+        if row.get('ai_notes'):
+            with st.expander(f"🎯 {row['ticker']} — AI Score: {row['ai_score']}/100"):
+                st.markdown(f"```\n{row['ai_notes']}\n```")
+        else:
+            with st.expander(f"🎯 {row['ticker']} — No AI Data"):
+                st.caption("This stock was manually recovered or lacks AI analysis data.")
 else:
-    if alpaca:
-        st.info("📈 No filled positions yet. Check pending orders below.")
-    else:
-        st.info("🎯 Connect Alpaca API to see live positions.")
+    st.info("🎯 No active positions found. The scanner will populate this section.")
 
 # =============================================================================
-# SECTION 1.5: PENDING ORDERS (Weekend/After Hours)
+# SECTION 1.5: PENDING ORDERS
 # =============================================================================
 if not orders_df.empty:
     st.markdown(f"### ⏳ Pending Orders ({len(orders_df)})")
     st.markdown("*(Orders waiting for market open)*")
-    
-    # Format for display
     order_disp = orders_df.copy()
     order_disp.columns = ['Ticker', 'Side', 'Qty', 'Status', 'Submitted']
-    
     st.dataframe(order_disp, use_container_width=True, hide_index=True)
 
 # =============================================================================
@@ -266,11 +318,11 @@ equity_df = fetch_equity_history()
 
 if not equity_df.empty:
     equity_df['recorded_at'] = pd.to_datetime(equity_df['recorded_at'])
-    
+
     y_min = equity_df['equity'].min()
     y_max = equity_df['equity'].max()
     y_padding = (y_max - y_min) * 0.1 if y_max != y_min else 5000
-    
+
     fig = go.Figure()
     fig.add_trace(go.Scatter(
         x=equity_df['recorded_at'],
@@ -287,8 +339,8 @@ if not equity_df.empty:
         height=300,
         xaxis=dict(showgrid=False),
         yaxis=dict(
-            showgrid=True, 
-            gridcolor='#F0F0F0', 
+            showgrid=True,
+            gridcolor='#F0F0F0',
             title='Total Equity ($)',
             range=[y_min - y_padding, y_max + y_padding]
         )
@@ -321,7 +373,7 @@ if activity_logs:
         action = log.get('action', 'CHECK')
         ticker = log.get('ticker', 'N/A')
         message = log.get('message', '')
-        
+
         if action == 'SELL':
             color = '#EB0029'
             icon = '🔴'
@@ -331,7 +383,7 @@ if activity_logs:
         else:
             color = '#666'
             icon = '⚪'
-        
+
         log_html += f"<div style='margin-bottom:8px; font-size:13px;'><span style='color:#999;'>{ts}</span> {icon} <strong style='color:{color};'>{action}</strong> {ticker}: {message}</div>"
     log_html += "</div>"
     st.markdown(log_html, unsafe_allow_html=True)

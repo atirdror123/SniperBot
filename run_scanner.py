@@ -365,18 +365,26 @@ Technical Pre-filter Score: {stock['tech_score']}/100
                 ticker = trade['ticker']
                 qty = trade['quantity']
                 
-                # Submit Alpaca order if available
+                # Submit Alpaca order with RETRY logic
                 if alpaca_client:
-                    try:
-                        order = alpaca_client.submit_bracket_order(
-                            ticker=ticker,
-                            qty=qty,
-                            stop_loss_pct=0.05,  # 5% stop loss
-                            take_profit_pct=0.10  # 10% take profit
-                        )
-                        print(f"  📈 ALPACA ORDER: {ticker} x{qty} - Order ID: {order.id}")
-                    except Exception as e:
-                        print(f"  ⚠️ Alpaca order failed for {ticker}: {e}")
+                    max_retries = 3
+                    for attempt in range(1, max_retries + 1):
+                        try:
+                            order = alpaca_client.submit_bracket_order(
+                                ticker=ticker,
+                                qty=qty,
+                                stop_loss_pct=0.05,
+                                take_profit_pct=0.10
+                            )
+                            print(f"  📈 ALPACA ORDER: {ticker} x{qty} - Order ID: {order.id}")
+                            break  # Success
+                        except Exception as e:
+                            print(f"  ⚠️ Alpaca attempt {attempt}/{max_retries} failed for {ticker}: {e}")
+                            if attempt < max_retries:
+                                import time as _t
+                                _t.sleep(2 ** attempt)  # Exponential backoff: 2s, 4s
+                            else:
+                                print(f"  ❌ ALPACA SYNC FAILED for {ticker} after {max_retries} attempts. Stock IS saved in DB.")
             
             # Always save to database for tracking
             try:
