@@ -13,6 +13,14 @@ load_dotenv()
 
 # --- CONFIG ---
 st.set_page_config(page_title="Sniper Terminal", page_icon="🎯", layout="wide")
+
+# --- ENV & SECRETS SETUP ---
+# Ensure secrets are available as env vars for other modules (like alpaca_client)
+if hasattr(st, "secrets"):
+    for key, value in st.secrets.items():
+        if key not in os.environ and isinstance(value, str):
+            os.environ[key] = value
+
 load_css()
 
 if not check_password():
@@ -275,17 +283,58 @@ if not positions_df.empty:
     except AttributeError:
         styler.applymap(color_pnl, subset=['P/L ($)', 'P/L (%)'])
 
-    st.dataframe(styler, use_container_width=True, hide_index=True)
+    # Enable row selection
+    event = st.dataframe(
+        styler,
+        use_container_width=True,
+        hide_index=True,
+        on_select="rerun",
+        selection_mode="single-row"
+    )
 
-    # --- AI INSIGHTS EXPANDER ---
-    st.markdown("### 🧠 AI Analysis (Why Each Stock Was Picked)")
-    for _, row in positions_df.iterrows():
-        if row.get('ai_notes'):
-            with st.expander(f"🎯 {row['ticker']} — AI Score: {row['ai_score']}/100"):
-                st.markdown(f"```\n{row['ai_notes']}\n```")
-        else:
-            with st.expander(f"🎯 {row['ticker']} — No AI Data"):
-                st.caption("This stock was manually recovered or lacks AI analysis data.")
+    # --- AI INSIGHTS (INTERACTIVE) ---
+    if event.selection.rows:
+        try:
+            selected_row_index = event.selection.rows[0]
+            # Get the actual data from the SOURCE dataframe (positions_df), not the display one
+            # We assume display_df structure matches positions_df iteration order
+            # Better: use the index to look up in positions_df
+            selected_ticker = display_df.iloc[selected_row_index]['Ticker']
+            
+            # Find the full data for this ticker
+            row_data = positions_df[positions_df['ticker'] == selected_ticker].iloc[0]
+            
+            st.markdown("---")
+            st.markdown(f"### 🧬 Target Intel: {selected_ticker}")
+            
+            c1, c2 = st.columns([2, 1])
+            
+            with c1:
+                st.markdown("#### 🧠 AI Rationale")
+                if row_data.get('ai_notes'):
+                    st.info(row_data['ai_notes'])
+                else:
+                    st.warning("No AI analysis data available for this position.")
+            
+            with c2:
+                st.markdown("#### 🕵️ Validation")
+                score = row_data.get('ai_score', 0)
+                st.metric("AI Score", f"{score}/100")
+                
+                # Check for Closer Verdict in raw_features if available
+                verdict = "N/A"
+                conf = 0
+                if isinstance(row_data.get('ai_rationale'), str) and "THE CLOSER" in row_data['ai_rationale']:
+                     verdict = "SEE LOG" # Parsed from text if needed, or we just rely on the text above
+                
+                # If we had the raw dict easier, we'd show it. For now, the notes cover it.
+                st.caption("Click another stock to view its intel.")
+                
+        except Exception as e:
+            st.error(f"Error displaying details: {e}")
+            
+    else:
+        st.info("👆 Select a stock in the table above to reveal AI Intelligence.")
 else:
     st.info("🎯 No active positions found. The scanner will populate this section.")
 
