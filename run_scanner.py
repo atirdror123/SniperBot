@@ -9,6 +9,7 @@ from supabase import create_client, Client
 from scanner_logic import SniperScorer
 from ai_signal_engine import AISignalEngine
 from tournament_ai import run_tournament
+from filter_config import EXIT_CONFIG
 from io import StringIO
 
 print("=" * 60)
@@ -28,8 +29,8 @@ load_dotenv()
 
 # Configuration
 BATCH_SIZE = 300
-TECH_PREFILTER_THRESHOLD = 70  # Technical score to qualify for AI evaluation
-AI_SCORE_THRESHOLD = 75        # AI score to save to database
+TECH_PREFILTER_THRESHOLD = 55  # Technical score to qualify for AI evaluation (was 70 - too strict)
+AI_SCORE_THRESHOLD = 65        # AI score to save to database (was 75 - unreachable with missing data)
 MIN_PRICE = 2.0
 MIN_DOLLAR_VOLUME = 5_000_000
 POSITION_SIZE = 2000  # Virtual Bank: $2,000 per position
@@ -300,8 +301,8 @@ def run_scanner():
             ai_details = stock['ai_details']
             entry_price = stock['entry_price']
             
-            # Calculate stop loss (3% below entry)
-            stop_loss = entry_price * 0.97
+            # Calculate stop loss (5% below entry — matches EXIT_CONFIG)
+            stop_loss = entry_price * (1 + EXIT_CONFIG['stop_loss_pct'] / 100)
             
             # Format AI reasons
             ai_reasons = f"""🎯 AI COMPOSITE SCORE: {stock['ai_score']}/100
@@ -334,7 +335,7 @@ Technical Pre-filter Score: {stock['tech_score']}/100
                 'invested_amount': invested_amount,
                 'status': 'OPEN',
                 'stop_loss_price': stop_loss,
-                'take_profit_price': entry_price * 1.10,  # 10% take profit
+                'peak_price': entry_price,  # Initialize peak for trailing stop
                 'ai_score': final_clamped_score,  # Use clamped score
                 'notes': ai_reasons,
                 'raw_features': {

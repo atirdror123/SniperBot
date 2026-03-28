@@ -300,61 +300,62 @@ Return JSON: {{ "score": <integer -100 to +100>, "reason": "<brief reasoning>" }
     # =========================================================================
     
     def score_stock(self, ticker: str) -> Dict:
-        """Score a single stock across all lenses. Blocking, may hit rate limits."""
+        """Score a single stock across all lenses using DYNAMIC AVERAGING.
+        Missing lenses are skipped, not penalized (matches PRODUCT_BLUEPRINT.md)."""
         data = self._fetch_yahoo_data(ticker)
-        
-        if not data['has_data']:
-            return {
-                'ticker': ticker,
-                'hunter': 0, 'hunter_reason': 'No data',
-                'quant': 50, 'quant_reason': 'No data',
-                'oracle': 0, 'oracle_reason': 'No data',
-                'success': False
-            }
-        
-        hunter, h_reason = self.score_hunter(ticker, data['insider'])
-        quant, q_reason = self.score_quant(ticker, data['institutional'], data['holders'])
-        oracle, o_reason = self.score_oracle(ticker, data['insider'], data['institutional'])
-        
-        # Calculate FINAL COMPOSITE SCORE (Weighted Average from Database)
-        # Weights are loaded from lens_weights table and updated by self-learning
+
+        # Score all lenses — missing data returns 0 with 'No data'/'No insider data' reason
+        hunter, h_reason = self.score_hunter(ticker, data.get('insider', ''))
+        quant, q_reason = self.score_quant(ticker, data.get('institutional', ''), data.get('holders', ''))
+        oracle, o_reason = self.score_oracle(ticker, data.get('insider', ''), data.get('institutional', ''))
+
+        # DYNAMIC AVERAGING: Only include lenses that have real data
+        # This matches the PRODUCT_BLUEPRINT.md principle: don't penalize missing data
         w = self.weights
-        
-        # NORMALIZE SCORES TO 0-100 SCALE:
-        # HUNTER: -100 to +100 → 0 to 100 (shift by +100, then divide by 2)
-        # QUANT: Already 0-100
-        # ORACLE: -100 to +100 → 0 to 100 (shift by +100, then divide by 2)
-        hunter_normalized = (hunter + 100) / 2  # -100→0, 0→50, +100→100
-        quant_normalized = quant  # Already 0-100
-        oracle_normalized = (oracle + 100) / 2  # -100→0, 0→50, +100→100
-        
-        # Clamp all to 0-100 before weighting
-        hunter_normalized = max(0, min(100, hunter_normalized))
-        quant_normalized = max(0, min(100, quant_normalized))
-        oracle_normalized = max(0, min(100, oracle_normalized))
-        
-        # FIX: Normalize weights to ensure they sum to 1.0
-        # Database weights may be > 1 (e.g., 1.2 for bias), so we normalize
-        total_weight = w['hunter'] + w['quant'] + w['oracle']
-        if total_weight == 0:
-            total_weight = 1.0  # Prevent division by zero
-        
-        # Weighted average with NORMALIZED weights (guarantees 0-100)
-        raw_score = (
-            (hunter_normalized * w['hunter']) + 
-            (quant_normalized * w['quant']) + 
-            (oracle_normalized * w['oracle'])
-        ) / total_weight
-        
-        # FINAL CAP: Ensure 0-100 regardless of any edge cases
-        final_score = round(max(0, min(100, raw_score)), 1)  # Keep 1 decimal
-        
+        active_scores = []
+        active_weights = []
+
+        # HUNTER: only count if we had insider data to analyze
+        hunter_has_data = h_reason not in ('No insider data', 'No data', 'RATE_LIMITED', 'BUDGET_LIMIT_REACHED')
+        hunter_normalized = max(0, min(100, (hunter + 100) / 2))
+        if hunter_has_data:
+            active_scores.append(hunter_normalized * w['hunter'])
+            active_weights.append(w['hunter'])
+
+        # QUANT: only count if we had institutional data
+        quant_has_data = q_reason not in ('No institutional data', 'No data', 'RATE_LIMITED', 'BUDGET_LIMIT_REACHED')
+        quant_normalized = max(0, min(100, quant))
+        if quant_has_data:
+            active_scores.append(quant_normalized * w['quant'])
+            active_weights.append(w['quant'])
+
+        # ORACLE: only count if we had data for synthesis
+        oracle_has_data = o_reason not in ('No data', 'RATE_LIMITED', 'BUDGET_LIMIT_REACHED')
+        oracle_normalized = max(0, min(100, (oracle + 100) / 2))
+        if oracle_has_data:
+            active_scores.append(oracle_normalized * w['oracle'])
+            active_weights.append(w['oracle'])
+
+        # Calculate weighted average of ACTIVE lenses only
+        if active_weights:
+            total_weight = sum(active_weights)
+            raw_score = sum(active_scores) / total_weight
+        else:
+            # No lenses had data — fallback to neutral
+            raw_score = 50.0
+
+        final_score = round(max(0, min(100, raw_score)), 1)
+
+        active_count = len(active_weights)
+        print(f"    [AI] {ticker}: {active_count}/3 lenses active → score {final_score}", flush=True)
+
         return {
             'ticker': ticker,
             'hunter': hunter, 'hunter_reason': h_reason,
             'quant': quant, 'quant_reason': q_reason,
             'oracle': oracle, 'oracle_reason': o_reason,
             'final_score': final_score,
+            'active_lenses': active_count,
             'success': 'RATE_LIMITED' not in [h_reason, q_reason, o_reason]
         }
     

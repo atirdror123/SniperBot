@@ -192,31 +192,43 @@ class SniperScorer:
 
 
             # --- 2. VOLATILITY COMPONENT (Target: 100) ---
-            # A. RVOL -> 60 pts
+            # A. RVOL -> 60 pts (GRADIENT instead of binary)
             if len(hist) >= 15:
                 today_vol = hist['Volume'].iloc[-1]
                 avg_vol_14 = hist['Volume'].iloc[-15:-1].mean()
                 rvol = today_vol / avg_vol_14 if avg_vol_14 > 0 else 0
                 raw_features['rvol'] = rvol
-                
-                if rvol > 1.5:
+
+                if rvol > 2.0:
                     s_vol += 60
+                    details.append(f"RVOL {rvol:.1f} > 2.0: +Vol (max)")
+                elif rvol > 1.5:
+                    s_vol += 45
                     details.append(f"RVOL {rvol:.1f} > 1.5: +Vol")
-            
-            # B. ATR Stability -> 40 pts
+                elif rvol > 1.0:
+                    s_vol += 25
+                    details.append(f"RVOL {rvol:.1f} > 1.0: +Vol (partial)")
+
+            # B. ATR Stability -> 40 pts (GRADIENT instead of binary)
             if len(hist) >= 15:
                  high_low = hist['High'] - hist['Low']
                  high_close = (hist['High'] - hist['Close'].shift()).abs()
                  low_close = (hist['Low'] - hist['Close'].shift()).abs()
                  true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
                  atr_14 = true_range.rolling(window=14).mean().iloc[-1]
-                 
+
                  atr_pct = atr_14 / current_price
                  raw_features['atr_pct'] = atr_pct
-                 
-                 if atr_pct < 0.05:
+
+                 if atr_pct < 0.04:
                      s_vol += 40
-                     details.append(f"ATR < 5%: +Vol")
+                     details.append(f"ATR {atr_pct:.1%} < 4%: +Vol (max)")
+                 elif atr_pct < 0.06:
+                     s_vol += 30
+                     details.append(f"ATR {atr_pct:.1%} < 6%: +Vol")
+                 elif atr_pct < 0.08:
+                     s_vol += 15
+                     details.append(f"ATR {atr_pct:.1%} < 8%: +Vol (partial)")
 
             s_vol = max(0, min(100, s_vol))
 
@@ -308,9 +320,12 @@ class SniperScorer:
                     if next_earnings_date:
                         days_until = (next_earnings_date - today).days
                         raw_features['days_to_earnings'] = days_until
-                        if days_until <= 7:
-                            earnings_penalty = 50
-                            details.append(f"🛑 Earnings Risk! Within 7 days (-50 pts)")
+                        if days_until <= 3:
+                            earnings_penalty = 25
+                            details.append(f"🛑 Earnings Risk! Within 3 days (-25 pts)")
+                        elif days_until <= 7:
+                            earnings_penalty = 10
+                            details.append(f"⚠️ Earnings approaching ({days_until}d) (-10 pts)")
                         else:
                             details.append(f"✅ Earnings Safe (Next: {next_earnings_date})")
                 except Exception:

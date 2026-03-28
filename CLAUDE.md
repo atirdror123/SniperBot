@@ -86,7 +86,7 @@ SniperBot/
 - **Rate limiting**: 1.0s sleep per stock during deep scan. Never below 0.8s.
 - **Gemini budget**: 500 requests/day cap.
 - **Hard filters**: Price > $2, Dollar Volume > $5M, Price > SMA150/200.
-- **Exit rules**: -3% stop loss, +10% take profit, time-stop at 72h with < 1% move.
+- **Exit rules**: -5% hard stop, trailing stop (activates at +5%, trails 3% below peak), time-stop at 5 trading days if still losing.
 - **Max positions**: 10 stocks, max correlation 0.7 between holdings.
 - **Paper trading position size**: $2,000 per trade, $100,000 virtual capital.
 

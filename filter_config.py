@@ -60,10 +60,11 @@ POSITION_CONFIG = {
 
 # Exit Rules
 EXIT_CONFIG = {
-    'stop_loss_pct': -3.0,        # Hard stop at -3%
-    'take_profit_pct': 10.0,      # Take profit target: +10% (sell all)
-    'time_stop_hours': 72,        # Exit if < 1% move in 72 hours
-    'time_stop_min_move': 1.0,    # Minimum required move %
+    'stop_loss_pct': -5.0,            # Hard stop at -5% (was -3%, too tight for normal volatility)
+    'trailing_stop_activation': 5.0,  # Activate trailing stop once stock is up +5%
+    'trailing_stop_pct': 3.0,         # Trail 3% below the peak price
+    'time_stop_hours': 120,           # 5 trading days (was 72h/3 days — too aggressive)
+    'time_stop_min_move': -2.0,       # Only exit stale LOSERS (down >2%), not flat/positive stocks
 }
 
 # Minimum lens score to be considered (based on winner profile)
